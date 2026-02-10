@@ -1,0 +1,9 @@
+{
+  "name": "sample-docker-app",
+  "version": "1.0.0",
+  "description": "Simple Node.js app running in Docker",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  }
+}
