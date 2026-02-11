@@ -569,6 +569,24 @@ Run endpoint:
 http://<HOST_IP>:8088/run
 ```
 
+### Tum HTTP Endpoint Listesi
+
+Genel:
+- `GET /healthz` -> `ok`
+- `POST /run` -> JSON alir, Tekton TaskRun olusturur
+- `POST /run?dry_run=true` -> YAML manifestleri dondurur
+
+Workspace ve uygulama:
+- `GET /endpoint?workspace=ws-<name>&app=<app>` -> NodePort endpoint dondurur
+- `GET /workspaces` -> workspace + app listesi
+- `GET /workspace/status?workspace=ws-<name>` -> pod/service durumu
+- `POST /workspace/delete?workspace=ws-<name>` -> workspace kind cluster siler
+- `POST /workspace/scale?workspace=ws-<name>&app=<app>&replicas=<n>` -> replica sayisi degisir
+- `POST /workspace/restart?workspace=ws-<name>` -> tum app'leri restart eder
+- `GET /app/status?workspace=ws-<name>&app=<app>` -> tek uygulama durumu
+- `POST /app/delete?workspace=ws-<name>&app=<app>` -> tek uygulama siler
+- `POST /app/restart?workspace=ws-<name>&app=<app>` -> tek uygulama restart
+
 Endpoint sorgulama:
 ```
 http://<HOST_IP>:8088/endpoint?workspace=ws-<app_name>&app=<app_name>
@@ -682,6 +700,19 @@ roleRef:
 ---
 
 ## 18) Postman / JSON Ornekleri
+
+### JSON Format Ozeti
+
+Ortak alanlar:
+- `app_name` (zip icin zorunlu)
+- `workspace` (opsiyonel, verilirse `ws-` ile baslamali)
+- `image.project`, `image.tag`, `image.registry`
+- `deploy.container_port` (opsiyonel, varsayilan 8080)
+
+Kaynak tipine gore:
+- `source.type=git` -> `repo_url`, `revision`, `git_username`, `git_token`
+- `source.type=local` -> `local_path` + `pvc_name` veya `nfs/smb` bilgileri
+- `source.type=zip` -> `zip_url`, opsiyonel `zip_username/zip_password`
 
 ### Git (GitHub/Azure HTTPS)
 
