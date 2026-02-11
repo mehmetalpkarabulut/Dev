@@ -76,68 +76,60 @@
         <section class="card wide">
           <div class="card-header">
             <div>
-              <div class="card-title">Yeni Build & Push</div>
-              <div class="card-sub">Form ile TaskRun tetikleyin</div>
+              <div class="card-title">Git Build</div>
+              <div class="card-sub">Repo kaynakli build</div>
             </div>
-            <button class="btn accent" id="runBtn">Create TaskRun</button>
+            <button class="btn accent" id="runGitBtn">Create Git TaskRun</button>
           </div>
           <div class="form-grid">
-            <div class="form-field">
-              <label>App Name</label>
-              <input id="formAppName" placeholder="demoapp" />
+            <div class="form-field"><label>App Name</label><input id="gitAppName" placeholder="demoapp" /></div>
+            <div class="form-field"><label>Workspace</label><input id="gitWorkspace" placeholder="ws-demo" /></div>
+            <div class="form-field"><label>Repo URL</label><input id="gitRepoUrl" placeholder="https://github.com/org/repo" /></div>
+            <div class="form-field"><label>Revision</label><input id="gitRevision" placeholder="main" /></div>
+            <div class="form-field"><label>Git Username</label><input id="gitUser" placeholder="optional" /></div>
+            <div class="form-field"><label>Git Token</label><input id="gitToken" placeholder="optional" /></div>
+            <div class="form-field"><label>Image Project</label><input id="gitImageProject" placeholder="demoapp" /></div>
+            <div class="form-field"><label>Image Tag</label><input id="gitImageTag" placeholder="latest" /></div>
+            <div class="form-field"><label>Registry</label><input id="gitRegistry" placeholder="lenovo:8443" /></div>
+            <div class="form-field"><label>Container Port</label><input id="gitPort" type="number" min="1" value="3000" /></div>
+          </div>
+        </section>
+
+        <section class="card wide">
+          <div class="card-header">
+            <div>
+              <div class="card-title">ZIP Build</div>
+              <div class="card-sub">Zip paket kaynakli build</div>
             </div>
-            <div class="form-field">
-              <label>Workspace</label>
-              <input id="formWorkspace" placeholder="ws-demo" />
+            <button class="btn accent" id="runZipBtn">Create ZIP TaskRun</button>
+          </div>
+          <div class="form-grid">
+            <div class="form-field"><label>App Name</label><input id="zipAppName" placeholder="demoapp" /></div>
+            <div class="form-field"><label>Workspace</label><input id="zipWorkspace" placeholder="ws-demo" /></div>
+            <div class="form-field"><label>Zip URL</label><input id="zipUrl" placeholder="http://.../app.zip" /></div>
+            <div class="form-field"><label>Image Project</label><input id="zipImageProject" placeholder="demoapp" /></div>
+            <div class="form-field"><label>Image Tag</label><input id="zipImageTag" placeholder="latest" /></div>
+            <div class="form-field"><label>Registry</label><input id="zipRegistry" placeholder="lenovo:8443" /></div>
+            <div class="form-field"><label>Container Port</label><input id="zipPort" type="number" min="1" value="8080" /></div>
+          </div>
+        </section>
+
+        <section class="card wide">
+          <div class="card-header">
+            <div>
+              <div class="card-title">Local Build</div>
+              <div class="card-sub">Local path kaynakli build</div>
             </div>
-            <div class="form-field">
-              <label>Source Type</label>
-              <select id="formSourceType">
-                <option value="git">git</option>
-                <option value="zip">zip</option>
-                <option value="local">local</option>
-              </select>
-            </div>
-            <div class="form-field">
-              <label>Repo URL</label>
-              <input id="formRepoUrl" placeholder="https://github.com/org/repo" />
-            </div>
-            <div class="form-field">
-              <label>Revision</label>
-              <input id="formRevision" placeholder="main" />
-            </div>
-            <div class="form-field">
-              <label>Git Username</label>
-              <input id="formGitUser" placeholder="optional" />
-            </div>
-            <div class="form-field">
-              <label>Git Token</label>
-              <input id="formGitToken" placeholder="optional" />
-            </div>
-            <div class="form-field">
-              <label>Zip URL</label>
-              <input id="formZipUrl" placeholder="http://.../app.zip" />
-            </div>
-            <div class="form-field">
-              <label>Local Path</label>
-              <input id="formLocalPath" placeholder="/mnt/projects/app" />
-            </div>
-            <div class="form-field">
-              <label>Image Project</label>
-              <input id="formImageProject" placeholder="demoapp" />
-            </div>
-            <div class="form-field">
-              <label>Image Tag</label>
-              <input id="formImageTag" placeholder="latest" />
-            </div>
-            <div class="form-field">
-              <label>Registry</label>
-              <input id="formRegistry" placeholder="lenovo:8443" />
-            </div>
-            <div class="form-field">
-              <label>Container Port</label>
-              <input id="formPort" type="number" min="1" value="3000" />
-            </div>
+            <button class="btn accent" id="runLocalBtn">Create Local TaskRun</button>
+          </div>
+          <div class="form-grid">
+            <div class="form-field"><label>App Name</label><input id="localAppName" placeholder="demoapp" /></div>
+            <div class="form-field"><label>Workspace</label><input id="localWorkspace" placeholder="ws-demo" /></div>
+            <div class="form-field"><label>Local Path</label><input id="localPath" placeholder="/mnt/projects/app" /></div>
+            <div class="form-field"><label>Image Project</label><input id="localImageProject" placeholder="demoapp" /></div>
+            <div class="form-field"><label>Image Tag</label><input id="localImageTag" placeholder="latest" /></div>
+            <div class="form-field"><label>Registry</label><input id="localRegistry" placeholder="lenovo:8443" /></div>
+            <div class="form-field"><label>Container Port</label><input id="localPort" type="number" min="1" value="3000" /></div>
           </div>
         </section>
 

@@ -174,6 +174,19 @@ async function refreshWorkspaceStatus(ws) {
   }
 }
 
+function getPodCounts(status, appName) {
+  const pods = Array.isArray(status?.pods) ? status.pods : [];
+  const appPods = pods.filter((p) => p.name && p.name.startsWith(`${appName}-`));
+  const running = appPods.filter((p) => p.phase === "Running").length;
+  return { total: appPods.length, running };
+}
+
+function getServicePort(status, appName) {
+  const services = Array.isArray(status?.services) ? status.services : [];
+  const svc = services.find((s) => s.name === appName);
+  return svc?.nodePort || null;
+}
+
 function renderWorkspaceDetail() {
   workspaceDetailEl.innerHTML = "";
   if (!currentWorkspace) {
@@ -235,13 +248,14 @@ function renderWorkspaceDetail() {
 
   apps.forEach((app) => {
     const name = app.app || app.name || "app";
+    const counts = getPodCounts(status, name);
+    const nodePort = getServicePort(status, name);
+
     const card = document.createElement("div");
     card.className = "detail-card";
-
-    const replica = status?.apps?.find?.((a) => a.app === name)?.replicas;
-    const replicaText = replica !== undefined ? replica : "?";
-
-    card.innerHTML = `<div class="detail-label">App</div><div class="detail-value">${name}</div><div class="detail-label">Replicas</div><div class="detail-value">${replicaText}</div>`;
+    card.innerHTML = `<div class="detail-label">App</div><div class="detail-value">${name}</div>
+      <div class="detail-label">Pods</div><div class="detail-value">${counts.running}/${counts.total}</div>
+      <div class="detail-label">NodePort</div><div class="detail-value">${nodePort || "-"}</div>`;
 
     const btns = document.createElement("div");
     btns.className = "detail-actions";
@@ -287,7 +301,7 @@ function renderWorkspaceDetail() {
     const scaleInput = document.createElement("input");
     scaleInput.type = "number";
     scaleInput.min = "1";
-    scaleInput.value = replicaText === "?" ? "1" : replicaText;
+    scaleInput.value = counts.total ? counts.total : "1";
     scaleInput.className = "scale-input";
     const scaleBtn = document.createElement("button");
     scaleBtn.className = "btn ghost";
@@ -307,34 +321,21 @@ function renderWorkspaceDetail() {
   workspaceDetailEl.append(info, actions, appSection);
 }
 
-function buildRunPayload() {
-  const appName = document.getElementById("formAppName").value.trim();
-  const workspace = document.getElementById("formWorkspace").value.trim();
-  const sourceType = document.getElementById("formSourceType").value;
-  const repoUrl = document.getElementById("formRepoUrl").value.trim();
-  const revision = document.getElementById("formRevision").value.trim();
-  const gitUser = document.getElementById("formGitUser").value.trim();
-  const gitToken = document.getElementById("formGitToken").value.trim();
-  const zipUrl = document.getElementById("formZipUrl").value.trim();
-  const localPath = document.getElementById("formLocalPath").value.trim();
-  const project = document.getElementById("formImageProject").value.trim();
-  const tag = document.getElementById("formImageTag").value.trim();
-  const registry = document.getElementById("formRegistry").value.trim();
-  const port = parseInt(document.getElementById("formPort").value, 10) || 3000;
+function buildGitPayload() {
+  const appName = document.getElementById("gitAppName").value.trim();
+  const workspace = document.getElementById("gitWorkspace").value.trim();
+  const repoUrl = document.getElementById("gitRepoUrl").value.trim();
+  const revision = document.getElementById("gitRevision").value.trim();
+  const gitUser = document.getElementById("gitUser").value.trim();
+  const gitToken = document.getElementById("gitToken").value.trim();
+  const project = document.getElementById("gitImageProject").value.trim();
+  const tag = document.getElementById("gitImageTag").value.trim();
+  const registry = document.getElementById("gitRegistry").value.trim();
+  const port = parseInt(document.getElementById("gitPort").value, 10) || 3000;
 
-  const source = { type: sourceType };
-  if (sourceType === "git") {
-    source.repo_url = repoUrl;
-    source.revision = revision || "main";
-    if (gitUser) source.git_username = gitUser;
-    if (gitToken) source.git_token = gitToken;
-  }
-  if (sourceType === "zip") {
-    source.zip_url = zipUrl;
-  }
-  if (sourceType === "local") {
-    source.local_path = localPath;
-  }
+  const source = { type: "git", repo_url: repoUrl, revision: revision || "main" };
+  if (gitUser) source.git_username = gitUser;
+  if (gitToken) source.git_token = gitToken;
 
   return {
     app_name: appName,
@@ -349,18 +350,79 @@ function buildRunPayload() {
   };
 }
 
-function fillForm(sample) {
-  document.getElementById("formAppName").value = sample.app_name;
-  document.getElementById("formWorkspace").value = sample.workspace;
-  document.getElementById("formSourceType").value = sample.source.type;
-  document.getElementById("formRepoUrl").value = sample.source.repo_url || "";
-  document.getElementById("formRevision").value = sample.source.revision || "";
-  document.getElementById("formZipUrl").value = sample.source.zip_url || "";
-  document.getElementById("formLocalPath").value = sample.source.local_path || "";
-  document.getElementById("formImageProject").value = sample.image.project;
-  document.getElementById("formImageTag").value = sample.image.tag;
-  document.getElementById("formRegistry").value = sample.image.registry;
-  document.getElementById("formPort").value = sample.deploy.container_port;
+function buildZipPayload() {
+  const appName = document.getElementById("zipAppName").value.trim();
+  const workspace = document.getElementById("zipWorkspace").value.trim();
+  const zipUrl = document.getElementById("zipUrl").value.trim();
+  const project = document.getElementById("zipImageProject").value.trim();
+  const tag = document.getElementById("zipImageTag").value.trim();
+  const registry = document.getElementById("zipRegistry").value.trim();
+  const port = parseInt(document.getElementById("zipPort").value, 10) || 8080;
+
+  return {
+    app_name: appName,
+    workspace: workspace,
+    source: { type: "zip", zip_url: zipUrl },
+    image: {
+      project: project || appName,
+      tag: tag || "latest",
+      registry: registry || "lenovo:8443"
+    },
+    deploy: { container_port: port }
+  };
+}
+
+function buildLocalPayload() {
+  const appName = document.getElementById("localAppName").value.trim();
+  const workspace = document.getElementById("localWorkspace").value.trim();
+  const localPath = document.getElementById("localPath").value.trim();
+  const project = document.getElementById("localImageProject").value.trim();
+  const tag = document.getElementById("localImageTag").value.trim();
+  const registry = document.getElementById("localRegistry").value.trim();
+  const port = parseInt(document.getElementById("localPort").value, 10) || 3000;
+
+  return {
+    app_name: appName,
+    workspace: workspace,
+    source: { type: "local", local_path: localPath },
+    image: {
+      project: project || appName,
+      tag: tag || "latest",
+      registry: registry || "lenovo:8443"
+    },
+    deploy: { container_port: port }
+  };
+}
+
+function fillGitForm(sample) {
+  document.getElementById("gitAppName").value = sample.app_name;
+  document.getElementById("gitWorkspace").value = sample.workspace;
+  document.getElementById("gitRepoUrl").value = sample.source.repo_url || "";
+  document.getElementById("gitRevision").value = sample.source.revision || "";
+  document.getElementById("gitImageProject").value = sample.image.project;
+  document.getElementById("gitImageTag").value = sample.image.tag;
+  document.getElementById("gitRegistry").value = sample.image.registry;
+  document.getElementById("gitPort").value = sample.deploy.container_port;
+}
+
+function fillZipForm(sample) {
+  document.getElementById("zipAppName").value = sample.app_name;
+  document.getElementById("zipWorkspace").value = sample.workspace;
+  document.getElementById("zipUrl").value = sample.source.zip_url || "";
+  document.getElementById("zipImageProject").value = sample.image.project;
+  document.getElementById("zipImageTag").value = sample.image.tag;
+  document.getElementById("zipRegistry").value = sample.image.registry;
+  document.getElementById("zipPort").value = sample.deploy.container_port;
+}
+
+function fillLocalForm(sample) {
+  document.getElementById("localAppName").value = sample.app_name;
+  document.getElementById("localWorkspace").value = sample.workspace;
+  document.getElementById("localPath").value = sample.source.local_path || "";
+  document.getElementById("localImageProject").value = sample.image.project;
+  document.getElementById("localImageTag").value = sample.image.tag;
+  document.getElementById("localRegistry").value = sample.image.registry;
+  document.getElementById("localPort").value = sample.deploy.container_port;
 }
 
 const sampleGit = {
@@ -409,17 +471,37 @@ const sampleLocal = {
   deploy: { container_port: 3000 }
 };
 
-document.getElementById("sampleGit").onclick = () => fillForm(sampleGit);
-document.getElementById("sampleZip").onclick = () => fillForm(sampleZip);
-document.getElementById("sampleLocal").onclick = () => fillForm(sampleLocal);
+document.getElementById("sampleGit").onclick = () => fillGitForm(sampleGit);
+document.getElementById("sampleZip").onclick = () => fillZipForm(sampleZip);
+document.getElementById("sampleLocal").onclick = () => fillLocalForm(sampleLocal);
 
 document.getElementById("healthBtn").onclick = async () => {
   await handleRequest("GET", "/healthz");
   healthCheck();
 };
 
-document.getElementById("runBtn").onclick = async () => {
-  const payload = buildRunPayload();
+document.getElementById("runGitBtn").onclick = async () => {
+  const payload = buildGitPayload();
+  await handleRequest("POST", "/run", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+  await refreshWorkspaces();
+};
+
+document.getElementById("runZipBtn").onclick = async () => {
+  const payload = buildZipPayload();
+  await handleRequest("POST", "/run", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+  await refreshWorkspaces();
+};
+
+document.getElementById("runLocalBtn").onclick = async () => {
+  const payload = buildLocalPayload();
   await handleRequest("POST", "/run", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
