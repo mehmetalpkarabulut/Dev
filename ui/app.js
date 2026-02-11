@@ -8,7 +8,7 @@ function log(obj) {
 }
 
 async function api(path, options = {}) {
-  const res = await fetch(`/api${path}`, options);
+  const res = await fetch(path, options);
   const contentType = res.headers.get("content-type") || "";
   const body = contentType.includes("application/json") ? await res.json() : await res.text();
   return { status: res.status, body };
@@ -18,10 +18,10 @@ async function healthCheck() {
   try {
     const { status } = await api("/healthz");
     healthBadge.textContent = `HEALTH: ${status}`;
-    healthBadge.style.color = status === 200 ? "#35c2aa" : "#ff6b6b";
+    healthBadge.style.color = status === 200 ? "#37d6a5" : "#ff6d6d";
   } catch (err) {
     healthBadge.textContent = "HEALTH: ERR";
-    healthBadge.style.color = "#ff6b6b";
+    healthBadge.style.color = "#ff6d6d";
   }
 }
 
@@ -83,7 +83,7 @@ document.getElementById("sampleLocal").onclick = () => {
   document.getElementById("runBody").value = JSON.stringify(sampleLocal, null, 2);
 };
 
-runnerBase.textContent = "/api → RUNNER_BASE_URL";
+runnerBase.textContent = "Same origin";
 
 // Buttons
 
