@@ -13,14 +13,17 @@
     <link rel="stylesheet" href="/ui/styles.css" />
   </head>
   <body>
-    <div class="noise"></div>
+    <div class="orb orb-a"></div>
+    <div class="orb orb-b"></div>
+    <div class="grid-noise"></div>
+
     <header class="topbar">
       <div class="brand">
         <div class="logo">TR</div>
         <div>
           <div class="kicker">Tekton Runner</div>
           <div class="title">Build & Deploy Console</div>
-          <div class="subtitle">Üretim seviyesine yakın MVP arayüzü</div>
+          <div class="subtitle">Orkestrasyon ve deploy kontrol paneli</div>
         </div>
       </div>
       <div class="statusbar">
@@ -32,17 +35,23 @@
 
     <div class="shell">
       <aside class="sidebar">
-        <div class="section">
+        <div class="side-card">
           <div class="section-title">Quick Actions</div>
           <button class="btn ghost" id="sampleGit">Git Sample</button>
           <button class="btn ghost" id="sampleZip">ZIP Sample</button>
           <button class="btn ghost" id="sampleLocal">Local Sample</button>
         </div>
-        <div class="section">
-          <div class="section-title">Tips</div>
+        <div class="side-card">
+          <div class="section-title">Guidance</div>
           <div class="tip">`/run` 202 dönerse TaskRun oluşur.</div>
           <div class="tip">`/endpoint` ile erişim URL’si gelir.</div>
           <div class="tip">`/workspace/*` ile cluster yönetimi yapılır.</div>
+        </div>
+        <div class="side-card">
+          <div class="section-title">Shortcuts</div>
+          <div class="shortcut">Swagger: <span> /docs</span></div>
+          <div class="shortcut">OpenAPI: <span> /openapi.json</span></div>
+          <div class="shortcut">UI: <span> /ui/</span></div>
         </div>
       </aside>
 
