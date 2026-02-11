@@ -423,6 +423,11 @@ input, select {
   max-width: 100px;
 }
 
+.external-input {
+  min-width: 120px;
+  max-width: 140px;
+}
+
 .split-panel {
   display: grid;
   grid-template-columns: 1fr 1fr;

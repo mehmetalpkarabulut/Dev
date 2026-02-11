@@ -11,6 +11,8 @@ let wsStatusCache = {};
 let endpointCache = {};
 let endpointInFlight = {};
 let wsPollTimer = null;
+let hostInfo = { host_ip: "" };
+let externalMap = [];
 
 function addActivity(entry) {
   activityCache.unshift(entry);
@@ -82,6 +84,47 @@ async function healthCheck() {
     healthBadge.textContent = "HEALTH: ERR";
     healthBadge.style.color = "#ff6d6d";
   }
+}
+
+async function loadHostInfo() {
+  const res = await api("/hostinfo");
+  if (res.status === 200 && res.body?.host_ip) {
+    hostInfo = res.body;
+  }
+}
+
+async function loadExternalMap() {
+  const res = await api("/external-map");
+  if (res.status === 200 && Array.isArray(res.body)) {
+    externalMap = res.body;
+  }
+}
+
+function getExternalPort(ws, app) {
+  const entry = externalMap.find((e) => e.workspace === ws && e.app === app);
+  return entry?.external_port || null;
+}
+
+function isPortUsedByOther(port, ws, app) {
+  return externalMap.some((e) => e.external_port === port && (e.workspace !== ws || e.app !== app));
+}
+
+async function setExternalPort(ws, app, port) {
+  if (isPortUsedByOther(port, ws, app)) {
+    addActivity({ method: "POST", endpoint: "/external-map", status: 409, message: "Port already in use" });
+    return false;
+  }
+  const res = await handleRequest("POST", "/external-map", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ workspace: ws, app, external_port: port })
+  });
+  if (res.status === 200) {
+    await loadExternalMap();
+    renderWorkspaceDetail();
+    return true;
+  }
+  return false;
 }
 
 function stopWorkspacePoll() {
@@ -315,6 +358,8 @@ function renderWorkspaceDetail() {
     const nodePort = getServicePort(status, name);
     const epKey = endpointKey(currentWorkspace, name);
     const endpoint = endpointCache[epKey] || "loading...";
+    const externalPort = getExternalPort(currentWorkspace, name);
+    const externalUrl = externalPort && hostInfo.host_ip ? `http://${hostInfo.host_ip}:${externalPort}` : "-";
 
     ensureEndpoint(currentWorkspace, name);
 
@@ -323,7 +368,8 @@ function renderWorkspaceDetail() {
     card.innerHTML = `<div class="detail-label">App</div><div class="detail-value">${name}</div>
       <div class="detail-label">Pods</div><div class="detail-value">${counts.running}/${counts.total}</div>
       <div class="detail-label">NodePort</div><div class="detail-value">${nodePort || "-"}</div>
-      <div class="detail-label">Endpoint</div><div class="detail-value">${endpoint}</div>`;
+      <div class="detail-label">Endpoint</div><div class="detail-value">${endpoint}</div>
+      <div class="detail-label">External URL</div><div class="detail-value">${externalUrl}</div>`;
 
     const btns = document.createElement("div");
     btns.className = "detail-actions";
@@ -360,9 +406,27 @@ function renderWorkspaceDetail() {
     };
     scaleWrap.append(scaleInput, scaleBtn);
 
+    const externalWrap = document.createElement("div");
+    externalWrap.className = "detail-actions";
+    const externalInput = document.createElement("input");
+    externalInput.type = "number";
+    externalInput.min = "1";
+    externalInput.placeholder = "External port";
+    externalInput.value = externalPort || "";
+    externalInput.className = "external-input";
+    const externalBtn = document.createElement("button");
+    externalBtn.className = "btn ghost";
+    externalBtn.textContent = "Set External";
+    externalBtn.onclick = async () => {
+      const port = parseInt(externalInput.value, 10);
+      if (!port) return;
+      await setExternalPort(currentWorkspace, name, port);
+    };
+    externalWrap.append(externalInput, externalBtn);
+
     btns.append(restartAppBtn, deleteAppBtn);
 
-    card.append(btns, scaleWrap);
+    card.append(btns, scaleWrap, externalWrap);
     appSection.append(card);
   });
 
@@ -566,4 +630,6 @@ document.getElementById("clearLog").onclick = () => {
 };
 
 healthCheck();
+loadHostInfo();
+loadExternalMap();
 refreshWorkspaces();

@@ -97,9 +97,22 @@ type ServerState struct {
 	endpoints map[string]string
 }
 
+type ExternalPortEntry struct {
+	Workspace    string `json:"workspace"`
+	App          string `json:"app"`
+	ExternalPort int    `json:"external_port"`
+}
+
+type ExternalPortStore struct {
+	mu      sync.Mutex
+	path    string
+	entries []ExternalPortEntry
+}
+
 var serverHostIP string
 var serverKubeconfig string
 var serverState = &ServerState{endpoints: map[string]string{}}
+var portStore = &ExternalPortStore{path: "/home/beko/port-map.json"}
 
 func main() {
 	inPath := flag.String("in", "", "input JSON file (default: stdin)")
@@ -185,6 +198,10 @@ func main() {
 }
 
 func runServer(addr, apiKey string) {
+	if err := portStore.load(); err != nil {
+		log.Printf("port map load error: %v", err)
+	}
+
 	http.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("ok"))
@@ -474,6 +491,51 @@ func runServer(addr, apiKey string) {
 	http.HandleFunc("/docs", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Write([]byte(swaggerHTML()))
+	})
+
+	http.HandleFunc("/hostinfo", func(w http.ResponseWriter, r *http.Request) {
+		host := serverHostIP
+		if host == "" {
+			host = strings.Split(r.Host, ":")[0]
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(fmt.Sprintf(`{"host_ip":"%s"}`, host)))
+	})
+
+	http.HandleFunc("/external-map", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			entries := portStore.list()
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			b, _ := json.Marshal(entries)
+			w.Write(b)
+			return
+		}
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		var req ExternalPortEntry
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "invalid json", http.StatusBadRequest)
+			return
+		}
+		if req.Workspace == "" || req.App == "" || req.ExternalPort <= 0 {
+			http.Error(w, "workspace, app and external_port are required", http.StatusBadRequest)
+			return
+		}
+		if err := portStore.upsert(req); err != nil {
+			if err == errPortConflict {
+				http.Error(w, "port already in use", http.StatusConflict)
+				return
+			}
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"status":"ok"}`))
 	})
 
 	// Optional UI at /ui/ (served from ./ui next to the binary)
@@ -949,6 +1011,26 @@ func openAPISpec() string {
         "responses": { "200": { "description": "Endpoint" } }
       }
     },
+    "/hostinfo": {
+      "get": {
+        "summary": "Get host IP",
+        "responses": { "200": { "description": "Host info" } }
+      }
+    },
+    "/external-map": {
+      "get": {
+        "summary": "List external port mappings",
+        "responses": { "200": { "description": "Mappings" } }
+      },
+      "post": {
+        "summary": "Set external port mapping",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ExternalPortEntry" } } }
+        },
+        "responses": { "200": { "description": "Saved" }, "409": { "description": "Port conflict" } }
+      }
+    },
     "/workspaces": {
       "get": {
         "summary": "List workspaces",
@@ -1061,6 +1143,14 @@ func openAPISpec() string {
             }
           }
         }
+      },
+      "ExternalPortEntry": {
+        "type": "object",
+        "properties": {
+          "workspace": { "type": "string" },
+          "app": { "type": "string" },
+          "external_port": { "type": "integer" }
+        }
       }
     }
   }
@@ -1086,6 +1176,69 @@ func swaggerHTML() string {
     </script>
   </body>
 </html>`
+}
+
+var errPortConflict = fmt.Errorf("external port already in use")
+
+func (s *ExternalPortStore) load() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	data, err := os.ReadFile(s.path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			s.entries = []ExternalPortEntry{}
+			return nil
+		}
+		return err
+	}
+	if len(data) == 0 {
+		s.entries = []ExternalPortEntry{}
+		return nil
+	}
+	var entries []ExternalPortEntry
+	if err := json.Unmarshal(data, &entries); err != nil {
+		return err
+	}
+	s.entries = entries
+	return nil
+}
+
+func (s *ExternalPortStore) list() []ExternalPortEntry {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]ExternalPortEntry, len(s.entries))
+	copy(out, s.entries)
+	return out
+}
+
+func (s *ExternalPortStore) upsert(in ExternalPortEntry) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, e := range s.entries {
+		if e.ExternalPort == in.ExternalPort && (e.Workspace != in.Workspace || e.App != in.App) {
+			return errPortConflict
+		}
+	}
+	updated := false
+	for i, e := range s.entries {
+		if e.Workspace == in.Workspace && e.App == in.App {
+			s.entries[i] = in
+			updated = true
+			break
+		}
+	}
+	if !updated {
+		s.entries = append(s.entries, in)
+	}
+	b, err := json.MarshalIndent(s.entries, "", "  ")
+	if err != nil {
+		return err
+	}
+	tmp := s.path + ".tmp"
+	if err := os.WriteFile(tmp, b, 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, s.path)
 }
 
 func findUIDir() string {
