@@ -631,15 +631,14 @@ func configureKindNode(clusterName string) error {
 	}
 
 	// Configure containerd to trust Harbor (skip TLS verify for test)
-	hostsToml := "server = \"https://lenovo:8443\"\n[host.\"https://lenovo:8443\"]\n  capabilities = [\"pull\", \"resolve\"]\n  skip_verify = true\n"
+	hostsToml := "server = \"https://lenovo:8443\"\\n[host.\\\"https://lenovo:8443\\\"]\\n  capabilities = [\\\"pull\\\", \\\"resolve\\\"]\\n  skip_verify = true\\n"
 	cmd = exec.Command("docker", "exec", node, "sh", "-c", "mkdir -p /etc/containerd/certs.d/lenovo:8443")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("mkdir certs.d: %v", err)
 	}
-	cmd = exec.Command("docker", "exec", node, "sh", "-c", "cat > /etc/containerd/certs.d/lenovo:8443/hosts.toml")
-	cmd.Stdin = strings.NewReader(hostsToml)
+	cmd = exec.Command("docker", "exec", node, "sh", "-c", "printf '%s' \""+hostsToml+"\" > /etc/containerd/certs.d/lenovo:8443/hosts.toml")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
