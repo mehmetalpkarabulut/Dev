@@ -14,6 +14,7 @@ let wsPollTimer = null;
 let hostInfo = { host_ip: "" };
 let externalMap = [];
 let externalInFlight = {};
+let externalDraft = {};
 
 function addActivity(entry) {
   activityCache.unshift(entry);
@@ -367,14 +368,16 @@ function renderWorkspaceDetail() {
     const endpoint = endpointCache[epKey] || "loading...";
 
     const defaultPort = defaultExternalPort(nodePort);
-    const externalPort = getExternalPort(currentWorkspace, name) || defaultPort;
+    const mappedPort = getExternalPort(currentWorkspace, name);
+    const draftKey = endpointKey(currentWorkspace, name);
+    const draftVal = externalDraft[draftKey];
+    const externalPort = draftVal !== undefined ? draftVal : (mappedPort || defaultPort);
 
-    if (defaultPort && !getExternalPort(currentWorkspace, name)) {
-      const key = endpointKey(currentWorkspace, name);
-      if (!externalInFlight[key]) {
-        externalInFlight[key] = true;
+    if (defaultPort && !mappedPort && externalDraft[draftKey] === undefined) {
+      if (!externalInFlight[draftKey]) {
+        externalInFlight[draftKey] = true;
         setExternalPort(currentWorkspace, name, defaultPort).finally(() => {
-          externalInFlight[key] = false;
+          externalInFlight[draftKey] = false;
         });
       }
     }
@@ -434,13 +437,21 @@ function renderWorkspaceDetail() {
     externalInput.placeholder = "External port";
     externalInput.value = externalPort || "";
     externalInput.className = "external-input";
+    externalInput.oninput = () => {
+      externalDraft[draftKey] = parseInt(externalInput.value, 10) || "";
+    };
     const externalBtn = document.createElement("button");
     externalBtn.className = "btn ghost";
     externalBtn.textContent = "Set External";
     externalBtn.onclick = async () => {
       const port = parseInt(externalInput.value, 10);
       if (!port) return;
-      await setExternalPort(currentWorkspace, name, port);
+      const ok = await setExternalPort(currentWorkspace, name, port);
+      if (ok) {
+        delete externalDraft[draftKey];
+        await loadExternalMap();
+        renderWorkspaceDetail();
+      }
     };
     externalWrap.append(externalInput, externalBtn);
 
