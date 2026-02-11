@@ -41,6 +41,10 @@ Bu dokuman, sifirdan hic bilginiz yokmus gibi tum adimlari ve gerekli manifestle
 - En az 4 CPU / 8 GB RAM / 30 GB disk
 - Internet erisimi (ilk kurulum icin)
 
+Onemli notlar:
+- Swap kapali olmali (Kubernetes/kind icin gerekli).
+- Docker daemon icinde `iptables` ve `ip-forward` kapali olmamali.
+
 ---
 
 ## 2) Docker Kurulumu (Ubuntu)
@@ -67,6 +71,18 @@ Docker test:
 sudo docker run --rm hello-world
 ```
 
+Docker networking kontrol (kind icin onemli):
+```bash
+sudo /bin/bash -lc 'cat /etc/docker/daemon.json'
+```
+`bridge` alanini kapatma, `iptables` ve `ip-forward` kapali olmamali.
+
+Swap kapatma:
+```bash
+sudo swapoff -a
+sudo sed -i.bak "/swap.img/s/^/#/" /etc/fstab
+```
+
 ---
 
 ## 3) kubectl Kurulumu
@@ -88,7 +104,7 @@ sudo mv ./kind /usr/local/bin/kind
 
 Kind cluster:
 ```bash
-kind create cluster --name tekton
+kind create cluster --name tekton --image kindest/node:v1.31.4
 kind get kubeconfig --name tekton > /tmp/kind-tekton.kubeconfig
 export KUBECONFIG=/tmp/kind-tekton.kubeconfig
 kubectl get nodes
@@ -557,6 +573,10 @@ cp -r /home/beko/tools/tekton-runner /home/beko/Dev/tools/
 
 ```bash
 ./tekton-runner -server -addr 0.0.0.0:8088 -host-ip <HOST_IP> -kubeconfig /tmp/kind-tekton.kubeconfig
+
+Notlar:
+- `KIND_NODE_IMAGE` ile kind node image override edilebilir. Varsayilan: `kindest/node:v1.31.4`
+- Git/ZIP/Local build tamamlandiktan sonra otomatik deploy ve workspace (kind cluster) olusur.
 ```
 
 Health check:
@@ -575,6 +595,9 @@ Genel:
 - `GET /healthz` -> `ok`
 - `POST /run` -> JSON alir, Tekton TaskRun olusturur
 - `POST /run?dry_run=true` -> YAML manifestleri dondurur
+- `GET /hostinfo` -> Host IP bilgisini dondurur (UI external URL icin)
+- `GET /external-map` -> External port map listesi
+- `POST /external-map` -> External port map ekler/gunceller
 
 Workspace ve uygulama:
 - `GET /endpoint?workspace=ws-<name>&app=<app>` -> NodePort endpoint dondurur
