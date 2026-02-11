@@ -191,10 +191,13 @@ async function refreshWorkspaces() {
 async function refreshWorkspaceStatus(ws, quiet = false) {
   if (!ws || !ws.startsWith("ws-")) return;
   const res = await handleRequest("GET", `/workspace/status?workspace=${encodeURIComponent(ws)}`, {}, quiet);
-  if (res.status === 200) {
-    wsStatusCache[ws] = res.body;
-    renderWorkspaceDetail();
-  }
+  wsStatusCache[ws] = {
+    ok: res.status === 200,
+    body: res.body,
+    status: res.status,
+    fetchedAt: new Date().toLocaleTimeString()
+  };
+  renderWorkspaceDetail();
 }
 
 function getPodCounts(status, appName) {
@@ -232,6 +235,21 @@ function prefetchEndpoints(ws) {
   apps.forEach((a) => ensureEndpoint(ws, a.app || a.name || "app"));
 }
 
+function deriveApps(entry, status) {
+  const apps = Array.isArray(entry?.apps) ? entry.apps : [];
+  if (apps.length) return apps.map((a) => ({ app: a.app || a.name || "app" }));
+  const derived = new Set();
+  const services = Array.isArray(status?.services) ? status.services : [];
+  services.forEach((s) => derived.add(s.name));
+  const pods = Array.isArray(status?.pods) ? status.pods : [];
+  pods.forEach((p) => {
+    if (p.name && p.name.includes("-")) {
+      derived.add(p.name.split("-").slice(0, -1).join("-"));
+    }
+  });
+  return Array.from(derived).map((a) => ({ app: a }));
+}
+
 function renderWorkspaceDetail() {
   workspaceDetailEl.innerHTML = "";
   if (!currentWorkspace) {
@@ -243,8 +261,9 @@ function renderWorkspaceDetail() {
   }
 
   const entry = workspacesCache.find((w) => w.workspace === currentWorkspace) || { workspace: currentWorkspace, apps: [] };
-  const apps = Array.isArray(entry.apps) ? entry.apps : [];
-  const status = wsStatusCache[currentWorkspace] || {};
+  const statusEntry = wsStatusCache[currentWorkspace] || {};
+  const status = statusEntry.body || {};
+  const apps = deriveApps(entry, status);
 
   const info = document.createElement("div");
   info.className = "detail-grid";
@@ -257,7 +276,12 @@ function renderWorkspaceDetail() {
   appCount.className = "detail-card";
   appCount.innerHTML = `<div class="detail-label">Apps</div><div class="detail-value">${apps.length}</div>`;
 
-  info.append(nameCard, appCount);
+  const statusCard = document.createElement("div");
+  statusCard.className = "detail-card";
+  statusCard.innerHTML = `<div class="detail-label">Status</div><div class="detail-value">${statusEntry.ok ? "OK" : "FAIL"}</div>
+    <div class="detail-label">Last Update</div><div class="detail-value">${statusEntry.fetchedAt || "-"}</div>`;
+
+  info.append(nameCard, appCount, statusCard);
 
   const actions = document.createElement("div");
   actions.className = "detail-actions";
