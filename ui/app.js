@@ -8,6 +8,8 @@ let currentApp = null;
 let workspacesCache = [];
 let activityCache = [];
 let wsStatusCache = {};
+let endpointCache = {};
+let endpointInFlight = {};
 let wsPollTimer = null;
 
 function addActivity(entry) {
@@ -103,6 +105,7 @@ function setCurrentWorkspace(ws) {
   renderWorkspaceDetail();
   refreshWorkspaceStatus(ws, true);
   startWorkspacePoll(ws);
+  prefetchEndpoints(ws);
 }
 
 function setCurrentApp(app) {
@@ -207,6 +210,28 @@ function getServicePort(status, appName) {
   return svc?.nodePort || null;
 }
 
+function endpointKey(ws, app) {
+  return `${ws}::${app}`;
+}
+
+async function ensureEndpoint(ws, app) {
+  const key = endpointKey(ws, app);
+  if (endpointCache[key] || endpointInFlight[key]) return;
+  endpointInFlight[key] = true;
+  const res = await handleRequest("GET", `/endpoint?workspace=${encodeURIComponent(ws)}&app=${encodeURIComponent(app)}`, {}, true);
+  if (res.status === 200 && res.body?.endpoint) {
+    endpointCache[key] = res.body.endpoint;
+    renderWorkspaceDetail();
+  }
+  delete endpointInFlight[key];
+}
+
+function prefetchEndpoints(ws) {
+  const entry = workspacesCache.find((w) => w.workspace === ws);
+  const apps = Array.isArray(entry?.apps) ? entry.apps : [];
+  apps.forEach((a) => ensureEndpoint(ws, a.app || a.name || "app"));
+}
+
 function renderWorkspaceDetail() {
   workspaceDetailEl.innerHTML = "";
   if (!currentWorkspace) {
@@ -237,13 +262,6 @@ function renderWorkspaceDetail() {
   const actions = document.createElement("div");
   actions.className = "detail-actions";
 
-  const statusBtn = document.createElement("button");
-  statusBtn.className = "btn ghost";
-  statusBtn.textContent = "Refresh Status";
-  statusBtn.onclick = async () => {
-    await refreshWorkspaceStatus(currentWorkspace, false);
-  };
-
   const restartBtn = document.createElement("button");
   restartBtn.className = "btn ghost";
   restartBtn.textContent = "Restart Workspace";
@@ -262,7 +280,7 @@ function renderWorkspaceDetail() {
     renderWorkspaceDetail();
   };
 
-  actions.append(statusBtn, restartBtn, deleteBtn);
+  actions.append(restartBtn, deleteBtn);
 
   const appSection = document.createElement("div");
   appSection.className = "detail-grid";
@@ -271,28 +289,20 @@ function renderWorkspaceDetail() {
     const name = app.app || app.name || "app";
     const counts = getPodCounts(status, name);
     const nodePort = getServicePort(status, name);
+    const epKey = endpointKey(currentWorkspace, name);
+    const endpoint = endpointCache[epKey] || "loading...";
+
+    ensureEndpoint(currentWorkspace, name);
 
     const card = document.createElement("div");
     card.className = "detail-card";
     card.innerHTML = `<div class="detail-label">App</div><div class="detail-value">${name}</div>
       <div class="detail-label">Pods</div><div class="detail-value">${counts.running}/${counts.total}</div>
-      <div class="detail-label">NodePort</div><div class="detail-value">${nodePort || "-"}</div>`;
+      <div class="detail-label">NodePort</div><div class="detail-value">${nodePort || "-"}</div>
+      <div class="detail-label">Endpoint</div><div class="detail-value">${endpoint}</div>`;
 
     const btns = document.createElement("div");
     btns.className = "detail-actions";
-
-    const endpointBtn = document.createElement("button");
-    endpointBtn.className = "btn ghost";
-    endpointBtn.textContent = "Endpoint";
-    endpointBtn.onclick = async () => {
-      const res = await handleRequest("GET", `/endpoint?workspace=${encodeURIComponent(currentWorkspace)}&app=${encodeURIComponent(name)}`);
-      if (res.status === 200 && res.body?.endpoint) {
-        const link = document.createElement("div");
-        link.className = "detail-value";
-        link.textContent = res.body.endpoint;
-        card.append(link);
-      }
-    };
 
     const restartAppBtn = document.createElement("button");
     restartAppBtn.className = "btn ghost";
@@ -326,7 +336,7 @@ function renderWorkspaceDetail() {
     };
     scaleWrap.append(scaleInput, scaleBtn);
 
-    btns.append(endpointBtn, restartAppBtn, deleteAppBtn);
+    btns.append(restartAppBtn, deleteAppBtn);
 
     card.append(btns, scaleWrap);
     appSection.append(card);
