@@ -305,6 +305,29 @@ func runServer(addr, apiKey string) {
 		w.Write(list)
 	})
 
+	http.HandleFunc("/workspace/delete", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		workspace := r.URL.Query().Get("workspace")
+		if workspace == "" {
+			http.Error(w, "workspace is required", http.StatusBadRequest)
+			return
+		}
+		if !strings.HasPrefix(workspace, "ws-") {
+			http.Error(w, "workspace must start with ws-", http.StatusBadRequest)
+			return
+		}
+		if err := deleteWorkspace(workspace); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"status":"deleted"}`))
+	})
+
 	log.Printf("listening on %s", addr)
 	log.Fatal(http.ListenAndServe(addr, nil))
 }
@@ -582,6 +605,26 @@ func listWorkspaceApps(kubeconfig, namespace string) ([]map[string]any, error) {
 		})
 	}
 	return apps, nil
+}
+
+func deleteWorkspace(name string) error {
+	cmd := exec.Command("kind", "delete", "cluster", "--name", name)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("kind delete cluster: %v", err)
+	}
+	kcfg := filepath.Join("/home/beko/kubeconfigs", name+".yaml")
+	_ = os.Remove(kcfg)
+
+	serverState.mu.Lock()
+	for k := range serverState.endpoints {
+		if strings.HasPrefix(k, name+"/") {
+			delete(serverState.endpoints, k)
+		}
+	}
+	serverState.mu.Unlock()
+	return nil
 }
 
 func setDefaults(in *Input) {

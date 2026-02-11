@@ -579,6 +579,11 @@ Workspace listesi:
 http://<HOST_IP>:8088/workspaces
 ```
 
+Workspace silme:
+```
+http://<HOST_IP>:8088/workspace/delete?workspace=ws-<name>
+```
+
 ---
 
 ## 17) RBAC (Opsiyonel)
