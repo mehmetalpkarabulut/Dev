@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"text/template"
 	"time"
 )
@@ -90,6 +91,14 @@ type RenderContext struct {
 	HasZip      bool
 }
 
+type ServerState struct {
+	mu        sync.Mutex
+	endpoints map[string]string
+}
+
+var serverHostIP string
+var serverState = &ServerState{endpoints: map[string]string{}}
+
 func main() {
 	inPath := flag.String("in", "", "input JSON file (default: stdin)")
 	outDir := flag.String("out-dir", "", "output directory (default: stdout only)")
@@ -97,9 +106,11 @@ func main() {
 	server := flag.Bool("server", false, "run HTTP server")
 	addr := flag.String("addr", ":8088", "server listen address")
 	apiKey := flag.String("api-key", "", "optional API key for server auth (Bearer)")
+	hostIP := flag.String("host-ip", "", "host IP for endpoint generation (optional)")
 	flag.Parse()
 
 	if *server {
+		serverHostIP = *hostIP
 		runServer(*addr, *apiKey)
 		return
 	}
@@ -248,6 +259,51 @@ func runServer(addr, apiKey string) {
 		w.Write([]byte(`{"status":"submitted"}`))
 	})
 
+	http.HandleFunc("/endpoint", func(w http.ResponseWriter, r *http.Request) {
+		workspace := r.URL.Query().Get("workspace")
+		app := r.URL.Query().Get("app")
+		if workspace == "" || app == "" {
+			http.Error(w, "workspace and app are required", http.StatusBadRequest)
+			return
+		}
+		key := workspace + "/" + app
+		serverState.mu.Lock()
+		if url, ok := serverState.endpoints[key]; ok {
+			serverState.mu.Unlock()
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(fmt.Sprintf(`{"endpoint":"%s"}`, url)))
+			return
+		}
+		serverState.mu.Unlock()
+
+		kcfgPath := filepath.Join("/home/beko/kubeconfigs", workspace+".yaml")
+		port, err := getServiceNodePort(kcfgPath, workspace, app)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+		host := serverHostIP
+		if host == "" {
+			host = "127.0.0.1"
+		}
+		url := fmt.Sprintf("http://%s:%d", host, port)
+		serverState.mu.Lock()
+		serverState.endpoints[key] = url
+		serverState.mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(fmt.Sprintf(`{"endpoint":"%s"}`, url)))
+	})
+
+	http.HandleFunc("/workspaces", func(w http.ResponseWriter, r *http.Request) {
+		list, err := listWorkspaces()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(list)
+	})
+
 	log.Printf("listening on %s", addr)
 	log.Fatal(http.ListenAndServe(addr, nil))
 }
@@ -328,6 +384,19 @@ func handleZipDeploy(in Input, taskRunName string) error {
 	image := fmt.Sprintf("%s/%s/%s:%s", in.Image.Registry, strings.ToLower(in.Image.Project), strings.ToLower(in.Image.Project), in.Image.Tag)
 	if err := applyDeployment(kcfgPath, clusterName, sanitizeName(in.AppName), image, in.Deploy.ContainerPort); err != nil {
 		return err
+	}
+
+	port, err := getServiceNodePort(kcfgPath, clusterName, sanitizeName(in.AppName))
+	if err == nil {
+		host := serverHostIP
+		if host == "" {
+			host = "127.0.0.1"
+		}
+		url := fmt.Sprintf("http://%s:%d", host, port)
+		key := clusterName + "/" + sanitizeName(in.AppName)
+		serverState.mu.Lock()
+		serverState.endpoints[key] = url
+		serverState.mu.Unlock()
 	}
 	return nil
 }
@@ -419,7 +488,7 @@ metadata:
   name: {{.App}}
   namespace: {{.Namespace}}
 spec:
-  type: ClusterIP
+  type: NodePort
   selector:
     app: {{.App}}
   ports:
@@ -443,6 +512,72 @@ func sanitizeName(in string) string {
 		return "app"
 	}
 	return s
+}
+
+func getServiceNodePort(kubeconfig, namespace, app string) (int, error) {
+	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfig, "-n", namespace, "get", "svc", app, "-o", "jsonpath={.spec.ports[0].nodePort}")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return 0, fmt.Errorf("get service nodePort failed: %v", err)
+	}
+	portStr := strings.TrimSpace(string(out))
+	if portStr == "" {
+		return 0, fmt.Errorf("nodePort not found")
+	}
+	var port int
+	_, err = fmt.Sscanf(portStr, "%d", &port)
+	if err != nil {
+		return 0, fmt.Errorf("invalid nodePort: %s", portStr)
+	}
+	return port, nil
+}
+
+func listWorkspaces() ([]byte, error) {
+	cmd := exec.Command("kind", "get", "clusters")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return nil, fmt.Errorf("kind get clusters: %v", err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	var workspaces []map[string]any
+	for _, line := range lines {
+		name := strings.TrimSpace(line)
+		if name == "" || !strings.HasPrefix(name, "ws-") {
+			continue
+		}
+		kcfg := filepath.Join("/home/beko/kubeconfigs", name+".yaml")
+		apps, _ := listWorkspaceApps(kcfg, name)
+		workspaces = append(workspaces, map[string]any{
+			"workspace": name,
+			"apps":      apps,
+		})
+	}
+	return json.Marshal(workspaces)
+}
+
+func listWorkspaceApps(kubeconfig, namespace string) ([]map[string]any, error) {
+	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfig, "-n", namespace, "get", "svc", "-o", `jsonpath={range .items[*]}{.metadata.name}|{.spec.ports[0].nodePort}{"\n"}{end}`)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return nil, err
+	}
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	var apps []map[string]any
+	for _, l := range lines {
+		parts := strings.Split(l, "|")
+		if len(parts) != 2 {
+			continue
+		}
+		name := parts[0]
+		portStr := parts[1]
+		var port int
+		fmt.Sscanf(portStr, "%d", &port)
+		apps = append(apps, map[string]any{
+			"app":      name,
+			"nodePort": port,
+		})
+	}
+	return apps, nil
 }
 
 func setDefaults(in *Input) {

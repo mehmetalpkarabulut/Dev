@@ -556,7 +556,7 @@ cp -r /home/beko/tools/tekton-runner /home/beko/Dev/tools/
 ## 16) Tekton Runner HTTP Servisini Calistirma
 
 ```bash
-./tekton-runner -server -addr 0.0.0.0:8088
+./tekton-runner -server -addr 0.0.0.0:8088 -host-ip <HOST_IP>
 ```
 
 Health check:
@@ -567,6 +567,16 @@ http://<HOST_IP>:8088/healthz
 Run endpoint:
 ```
 http://<HOST_IP>:8088/run
+```
+
+Endpoint sorgulama:
+```
+http://<HOST_IP>:8088/endpoint?workspace=ws-<app_name>&app=<app_name>
+```
+
+Workspace listesi:
+```
+http://<HOST_IP>:8088/workspaces
 ```
 
 ---
@@ -721,6 +731,11 @@ roleRef:
     "container_port": 8080
   }
 }
+```
+
+Bu istek basarili olduktan sonra endpoint almak icin:
+```
+http://<HOST_IP>:8088/endpoint?workspace=ws-demoapp&app=demoapp
 ```
 
 ---

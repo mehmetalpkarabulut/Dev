@@ -61,10 +61,6 @@ cat request.json | ./tekton-runner
       "secret_name": "optional-secret"
     }
   },
-  "app_name": "demoapp",
-  "deploy": {
-    "container_port": 8080
-  },
   "image": {
     "project": "myapp",
     "tag": "latest",

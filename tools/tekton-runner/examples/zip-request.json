@@ -1,7 +1,6 @@
 {
   "namespace": "tekton-pipelines",
   "task": "build-and-push-generic",
-  "app_name": "demoapp",
   "source": {
     "type": "zip",
     "zip_url": "https://example.com/app.zip",
@@ -9,11 +8,8 @@
     "zip_password": "ZIP_PASS"
   },
   "image": {
-    "project": "demoapp",
+    "project": "myapp",
     "tag": "latest",
     "registry": "lenovo:8443"
-  },
-  "deploy": {
-    "container_port": 8080
   }
 }
