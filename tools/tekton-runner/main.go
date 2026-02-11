@@ -466,6 +466,16 @@ func runServer(addr, apiKey string) {
 		w.Write([]byte(`{"status":"restarted"}`))
 	})
 
+	http.HandleFunc("/openapi.json", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(openAPISpec()))
+	})
+
+	http.HandleFunc("/docs", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Write([]byte(swaggerHTML()))
+	})
+
 	log.Printf("listening on %s", addr)
 	log.Fatal(http.ListenAndServe(addr, nil))
 }
@@ -894,6 +904,179 @@ func rolloutRestartAll(workspace string) error {
 		return fmt.Errorf("rollout restart all: %v", err)
 	}
 	return nil
+}
+
+func openAPISpec() string {
+	return `{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Tekton Runner API",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/healthz": {
+      "get": {
+        "summary": "Health check",
+        "responses": { "200": { "description": "OK" } }
+      }
+    },
+    "/run": {
+      "post": {
+        "summary": "Create TaskRun",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RunRequest" } } }
+        },
+        "responses": { "202": { "description": "Submitted" } }
+      }
+    },
+    "/endpoint": {
+      "get": {
+        "summary": "Get app endpoint",
+        "parameters": [
+          { "name": "workspace", "in": "query", "required": true, "schema": { "type": "string" } },
+          { "name": "app", "in": "query", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": { "200": { "description": "Endpoint" } }
+      }
+    },
+    "/workspaces": {
+      "get": {
+        "summary": "List workspaces",
+        "responses": { "200": { "description": "Workspaces" } }
+      }
+    },
+    "/workspace/status": {
+      "get": {
+        "summary": "Workspace status",
+        "parameters": [
+          { "name": "workspace", "in": "query", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": { "200": { "description": "Status" } }
+      }
+    },
+    "/workspace/delete": {
+      "post": {
+        "summary": "Delete workspace",
+        "parameters": [
+          { "name": "workspace", "in": "query", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": { "200": { "description": "Deleted" } }
+      }
+    },
+    "/workspace/scale": {
+      "post": {
+        "summary": "Scale app",
+        "parameters": [
+          { "name": "workspace", "in": "query", "required": true, "schema": { "type": "string" } },
+          { "name": "app", "in": "query", "required": true, "schema": { "type": "string" } },
+          { "name": "replicas", "in": "query", "required": true, "schema": { "type": "integer" } }
+        ],
+        "responses": { "200": { "description": "Scaled" } }
+      }
+    },
+    "/workspace/restart": {
+      "post": {
+        "summary": "Restart all apps in workspace",
+        "parameters": [
+          { "name": "workspace", "in": "query", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": { "200": { "description": "Restarted" } }
+      }
+    },
+    "/app/status": {
+      "get": {
+        "summary": "App status",
+        "parameters": [
+          { "name": "workspace", "in": "query", "required": true, "schema": { "type": "string" } },
+          { "name": "app", "in": "query", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": { "200": { "description": "Status" } }
+      }
+    },
+    "/app/delete": {
+      "post": {
+        "summary": "Delete app",
+        "parameters": [
+          { "name": "workspace", "in": "query", "required": true, "schema": { "type": "string" } },
+          { "name": "app", "in": "query", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": { "200": { "description": "Deleted" } }
+      }
+    },
+    "/app/restart": {
+      "post": {
+        "summary": "Restart app",
+        "parameters": [
+          { "name": "workspace", "in": "query", "required": true, "schema": { "type": "string" } },
+          { "name": "app", "in": "query", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": { "200": { "description": "Restarted" } }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "RunRequest": {
+        "type": "object",
+        "properties": {
+          "app_name": { "type": "string" },
+          "workspace": { "type": "string" },
+          "source": {
+            "type": "object",
+            "properties": {
+              "type": { "type": "string", "enum": ["git","local","zip"] },
+              "repo_url": { "type": "string" },
+              "revision": { "type": "string" },
+              "git_username": { "type": "string" },
+              "git_token": { "type": "string" },
+              "local_path": { "type": "string" },
+              "pvc_name": { "type": "string" },
+              "zip_url": { "type": "string" },
+              "zip_username": { "type": "string" },
+              "zip_password": { "type": "string" }
+            }
+          },
+          "image": {
+            "type": "object",
+            "properties": {
+              "project": { "type": "string" },
+              "tag": { "type": "string" },
+              "registry": { "type": "string" }
+            }
+          },
+          "deploy": {
+            "type": "object",
+            "properties": {
+              "container_port": { "type": "integer" }
+            }
+          }
+        }
+      }
+    }
+  }
+}`
+}
+
+func swaggerHTML() string {
+	return `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Tekton Runner API Docs</title>
+    <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css" />
+  </head>
+  <body>
+    <div id="swagger-ui"></div>
+    <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+    <script>
+      window.ui = SwaggerUIBundle({
+        url: "/openapi.json",
+        dom_id: "#swagger-ui"
+      });
+    </script>
+  </body>
+</html>`
 }
 
 func getWorkspaceStatus(workspace string) ([]byte, error) {

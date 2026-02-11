@@ -842,3 +842,7 @@ kubectl logs -n tekton-pipelines pod/<POD_ADI> -c step-build
 - Tekton Task: `build-and-push-generic`
 - Tekton Runner API: `http://<HOST_IP>:8088/run`
 - Harbor: `https://lenovo:8443`
+
+Swagger / OpenAPI:
+- Swagger UI: `http://<HOST_IP>:8088/docs`
+- OpenAPI JSON: `http://<HOST_IP>:8088/openapi.json`
