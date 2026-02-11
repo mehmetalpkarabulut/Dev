@@ -526,8 +526,11 @@ go build -o tekton-runner ./...
 
 ## 14) Tekton Runner Uygulamasi Ne Ise Yarar?
 
-`tekton-runner` disaridan gelen HTTP POST isteklerini alir ve buna gore Tekton TaskRun olusturur. Bu sayede webhook kurmadan, baska bir uygulama veya Postman ile kolayca build baslatilir. \n
+`tekton-runner` disaridan gelen HTTP POST isteklerini alir ve buna gore Tekton TaskRun olusturur. Bu sayede webhook kurmadan, baska bir uygulama veya Postman ile kolayca build baslatilir.
+
 Zip modu otomatik calisir: `source.type=zip` geldigi anda Task, zip'i indirir, Dockerfile'i bulur ve kaniko ile image build + Harbor push yapar. HTTP servis sadece TaskRun yaratir, build arka planda Tekton tarafinda calisir.
+
+ZIP icin ek olarak: build basarili olduktan sonra host uzerinde otomatik `kind` cluster olusturulur (workspace adina gore), ve uygulama Deployment+Service olarak bu cluster'a apply edilir. Workspace ismi `ws-<app_name>` formatindadir. Ayni workspace icinde baska bir uygulama geldigi durumda, ayni kind cluster icinde farkli deployment olarak ayaga kalkar.
 
 ---
 
@@ -702,6 +705,7 @@ roleRef:
 
 ```json
 {
+  "app_name": "demoapp",
   "source": {
     "type": "zip",
     "zip_url": "https://example.com/app.zip",
@@ -712,6 +716,9 @@ roleRef:
     "project": "myapp",
     "tag": "latest",
     "registry": "lenovo:8443"
+  },
+  "deploy": {
+    "container_port": 8080
   }
 }
 ```

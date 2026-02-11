@@ -163,3 +163,25 @@ Run endpoint:
 ```
 http://<HOST_IP>:8088/run
 ```
+
+## Ornek ZIP JSON (workspace + otomatik kind)
+
+```json
+{
+  "app_name": "demoapp",
+  "source": {
+    "type": "zip",
+    "zip_url": "https://example.com/app.zip",
+    "zip_username": "ZIP_USER",
+    "zip_password": "ZIP_PASS"
+  },
+  "image": {
+    "project": "demoapp",
+    "tag": "latest",
+    "registry": "lenovo:8443"
+  },
+  "deploy": {
+    "container_port": 8080
+  }
+}
+```

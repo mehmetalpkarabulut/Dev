@@ -1,6 +1,4 @@
 {
-  "namespace": "tekton-pipelines",
-  "task": "build-and-push-generic",
   "app_name": "demoapp",
   "source": {
     "type": "zip",

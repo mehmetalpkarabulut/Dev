@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"text/template"
 	"time"
@@ -21,6 +22,8 @@ import (
 type Input struct {
 	Namespace string `json:"namespace"`
 	Task      string `json:"task"`
+	AppName   string `json:"app_name"`
+	Deploy    Deploy `json:"deploy"`
 	Source    Source `json:"source"`
 	Image     Image  `json:"image"`
 }
@@ -61,6 +64,10 @@ type Image struct {
 	Project  string `json:"project"`
 	Tag      string `json:"tag"`
 	Registry string `json:"registry"`
+}
+
+type Deploy struct {
+	ContainerPort int `json:"container_port"`
 }
 
 type RenderContext struct {
@@ -140,15 +147,26 @@ func main() {
 		return
 	}
 
-		for _, m := range manifests {
-			cmd := exec.Command("kubectl", "create", "-f", "-")
-			cmd.Stdin = strings.NewReader(m)
-			cmd.Stdout = os.Stdout
-			cmd.Stderr = os.Stderr
-			if err := cmd.Run(); err != nil {
+	var taskRunName string
+	for _, m := range manifests {
+		if isTaskRun(m) {
+			name, err := kubectlCreateName(m, in.Namespace)
+			if err != nil {
+				fatal("kubectl create", err)
+			}
+			taskRunName = name
+		} else {
+			if err := kubectlApply(m); err != nil {
 				fatal("kubectl apply", err)
 			}
 		}
+	}
+
+	if in.Source.Type == "zip" && in.AppName != "" && taskRunName != "" {
+		if err := handleZipDeploy(in, taskRunName); err != nil {
+			fatal("zip deploy", err)
+		}
+	}
 }
 
 func runServer(addr, apiKey string) {
@@ -200,15 +218,29 @@ func runServer(addr, apiKey string) {
 			return
 		}
 
+		var taskRunName string
 		for _, m := range manifests {
-			cmd := exec.Command("kubectl", "create", "-f", "-")
-			cmd.Stdin = strings.NewReader(m)
-			cmd.Stdout = os.Stdout
-			cmd.Stderr = os.Stderr
-			if err := cmd.Run(); err != nil {
-				http.Error(w, "kubectl create failed", http.StatusInternalServerError)
-				return
+			if isTaskRun(m) {
+				name, err := kubectlCreateName(m, in.Namespace)
+				if err != nil {
+					http.Error(w, "kubectl create failed", http.StatusInternalServerError)
+					return
+				}
+				taskRunName = name
+			} else {
+				if err := kubectlApply(m); err != nil {
+					http.Error(w, "kubectl apply failed", http.StatusInternalServerError)
+					return
+				}
 			}
+		}
+
+		if in.Source.Type == "zip" && in.AppName != "" && taskRunName != "" {
+			go func(req Input, tr string) {
+				if err := handleZipDeploy(req, tr); err != nil {
+					log.Printf("zip deploy error: %v", err)
+				}
+			}(in, taskRunName)
 		}
 
 		w.Header().Set("Content-Type", "application/json")
@@ -248,6 +280,171 @@ func buildManifests(in *Input) ([]string, error) {
 	return manifests, nil
 }
 
+func isTaskRun(m string) bool {
+	return strings.Contains(m, "\nkind: TaskRun\n") || strings.HasPrefix(m, "kind: TaskRun\n")
+}
+
+func kubectlApply(m string) error {
+	cmd := exec.Command("kubectl", "apply", "-f", "-")
+	cmd.Stdin = strings.NewReader(m)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
+}
+
+func kubectlCreateName(m, ns string) (string, error) {
+	cmd := exec.Command("kubectl", "-n", ns, "create", "-f", "-", "-o", "name")
+	cmd.Stdin = strings.NewReader(m)
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return "", err
+	}
+	parts := strings.Split(strings.TrimSpace(out.String()), "/")
+	if len(parts) != 2 {
+		return "", fmt.Errorf("unexpected create output: %s", out.String())
+	}
+	return parts[1], nil
+}
+
+func handleZipDeploy(in Input, taskRunName string) error {
+	ns := in.Namespace
+	if err := waitForTaskRun(ns, taskRunName, 45*time.Minute); err != nil {
+		return err
+	}
+
+	clusterName := "ws-" + sanitizeName(in.AppName)
+	kcfgDir := "/home/beko/kubeconfigs"
+	if err := os.MkdirAll(kcfgDir, 0o755); err != nil {
+		return err
+	}
+	kcfgPath := filepath.Join(kcfgDir, clusterName+".yaml")
+
+	if err := ensureKindCluster(clusterName, kcfgPath); err != nil {
+		return err
+	}
+
+	image := fmt.Sprintf("%s/%s/%s:%s", in.Image.Registry, strings.ToLower(in.Image.Project), strings.ToLower(in.Image.Project), in.Image.Tag)
+	if err := applyDeployment(kcfgPath, clusterName, sanitizeName(in.AppName), image, in.Deploy.ContainerPort); err != nil {
+		return err
+	}
+	return nil
+}
+
+func waitForTaskRun(ns, name string, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		cmd := exec.Command("kubectl", "-n", ns, "get", "taskrun", name, "-o", "jsonpath={.status.conditions[0].status}")
+		out, _ := cmd.CombinedOutput()
+		status := strings.TrimSpace(string(out))
+		if status == "True" {
+			return nil
+		}
+		if status == "False" {
+			cmd = exec.Command("kubectl", "-n", ns, "get", "taskrun", name, "-o", "jsonpath={.status.conditions[0].message}")
+			msg, _ := cmd.CombinedOutput()
+			return fmt.Errorf("taskrun failed: %s", strings.TrimSpace(string(msg)))
+		}
+		time.Sleep(5 * time.Second)
+	}
+	return fmt.Errorf("taskrun timeout: %s", name)
+}
+
+func ensureKindCluster(name, kubeconfigPath string) error {
+	cmd := exec.Command("kind", "get", "clusters")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("kind get clusters: %v", err)
+	}
+	if !strings.Contains(string(out), name) {
+		cmd = exec.Command("kind", "create", "cluster", "--name", name)
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("kind create cluster: %v", err)
+		}
+	}
+
+	cmd = exec.Command("kind", "get", "kubeconfig", "--name", name)
+	out, err = cmd.Output()
+	if err != nil {
+		return fmt.Errorf("kind get kubeconfig: %v", err)
+	}
+	return os.WriteFile(kubeconfigPath, out, 0o600)
+}
+
+func applyDeployment(kubeconfig, namespace, app, image string, port int) error {
+	if port == 0 {
+		port = 8080
+	}
+	manifest := renderDeployment(namespace, app, image, port)
+	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfig, "apply", "-f", "-")
+	cmd.Stdin = strings.NewReader(manifest)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
+}
+
+func renderDeployment(ns, app, image string, port int) string {
+	tpl := `apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{.Namespace}}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{.App}}
+  namespace: {{.Namespace}}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{.App}}
+  template:
+    metadata:
+      labels:
+        app: {{.App}}
+    spec:
+      containers:
+        - name: {{.App}}
+          image: {{.Image}}
+          ports:
+            - containerPort: {{.Port}}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{.App}}
+  namespace: {{.Namespace}}
+spec:
+  type: ClusterIP
+  selector:
+    app: {{.App}}
+  ports:
+    - port: 80
+      targetPort: {{.Port}}
+`
+	return mustRender(tpl, map[string]string{
+		"Namespace": ns,
+		"App":       app,
+		"Image":     image,
+		"Port":      fmt.Sprintf("%d", port),
+	})
+}
+
+func sanitizeName(in string) string {
+	s := strings.ToLower(in)
+	re := regexp.MustCompile(`[^a-z0-9-]+`)
+	s = re.ReplaceAllString(s, "-")
+	s = strings.Trim(s, "-")
+	if s == "" {
+		return "app"
+	}
+	return s
+}
+
 func setDefaults(in *Input) {
 	if in.Namespace == "" {
 		in.Namespace = "tekton-pipelines"
@@ -269,6 +466,9 @@ func setDefaults(in *Input) {
 	}
 	if in.Source.SMB != nil && in.Source.SMB.Size == "" {
 		in.Source.SMB.Size = "50Gi"
+	}
+	if in.Deploy.ContainerPort == 0 {
+		in.Deploy.ContainerPort = 8080
 	}
 }
 
@@ -295,6 +495,9 @@ func validate(in *Input) error {
 	if in.Source.Type == "zip" {
 		if in.Source.ZipURL == "" {
 			return fmt.Errorf("source.zip_url is required for zip")
+		}
+		if in.AppName == "" {
+			return fmt.Errorf("app_name is required for zip deployments")
 		}
 	}
 	return nil
