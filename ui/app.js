@@ -79,19 +79,7 @@ function setAppInputs(workspace, app) {
   document.getElementById("wsScaleApp").value = app;
 }
 
-function extractAppNames(body) {
-  if (!body || typeof body !== "object") return [];
-  const candidates = [];
-  for (const key of Object.keys(body)) {
-    const val = body[key];
-    if (Array.isArray(val) && val.every((v) => typeof v === "string")) {
-      candidates.push(...val);
-    }
-  }
-  return [...new Set(candidates)];
-}
-
-function renderWorkspaceCard(name, statusBody) {
+function renderWorkspaceCard(entry, statusBody) {
   const card = document.createElement("div");
   card.className = "workspace-card";
 
@@ -100,7 +88,7 @@ function renderWorkspaceCard(name, statusBody) {
 
   const title = document.createElement("div");
   title.className = "workspace-title";
-  title.textContent = name;
+  title.textContent = entry.workspace || "(unknown)";
 
   const actions = document.createElement("div");
   actions.className = "workspace-actions";
@@ -108,23 +96,29 @@ function renderWorkspaceCard(name, statusBody) {
   const selectBtn = document.createElement("button");
   selectBtn.className = "btn ghost";
   selectBtn.textContent = "Select";
-  selectBtn.onclick = () => setWorkspaceInputs(name);
+  selectBtn.onclick = () => setWorkspaceInputs(entry.workspace);
 
   const statusBtn = document.createElement("button");
   statusBtn.className = "btn ghost";
   statusBtn.textContent = "Status";
   statusBtn.onclick = async () => {
-    await handleRequest("GET", `/workspace/status?workspace=${encodeURIComponent(name)}`);
+    if (!entry.workspace || !entry.workspace.startsWith("ws-")) {
+      addActivity({
+        method: "GET",
+        endpoint: "/workspace/status",
+        status: 400,
+        bodyText: "workspace must start with ws-",
+        timestamp: new Date().toLocaleString()
+      });
+      return;
+    }
+    await handleRequest("GET", `/workspace/status?workspace=${encodeURIComponent(entry.workspace)}`);
   };
 
   actions.append(selectBtn, statusBtn);
   header.append(title, actions);
 
-  const summary = document.createElement("div");
-  summary.className = "workspace-summary";
-  summary.textContent = typeof statusBody === "string" ? statusBody : "";
-
-  const apps = extractAppNames(statusBody);
+  const apps = Array.isArray(entry.apps) ? entry.apps : [];
   const appList = document.createElement("div");
   appList.className = "app-list";
   if (apps.length === 0) {
@@ -136,15 +130,15 @@ function renderWorkspaceCard(name, statusBody) {
     apps.forEach((app) => {
       const chip = document.createElement("button");
       chip.className = "app-chip";
-      chip.textContent = app;
-      chip.onclick = () => setAppInputs(name, app);
+      chip.textContent = app.app || app.name || "app";
+      chip.onclick = () => setAppInputs(entry.workspace, app.app || app.name || "app");
       appList.append(chip);
     });
   }
 
   const raw = document.createElement("pre");
   raw.className = "workspace-raw";
-  raw.textContent = stringifyBody(statusBody);
+  raw.textContent = stringifyBody(statusBody || entry);
 
   card.append(header, appList, raw);
   return card;
@@ -177,9 +171,14 @@ async function refreshWorkspaces() {
     return;
   }
 
-  for (const name of list) {
-    const statusRes = await api(`/workspace/status?workspace=${encodeURIComponent(name)}`);
-    const card = renderWorkspaceCard(name, statusRes.body);
+  for (const entry of list) {
+    if (!entry.workspace) continue;
+    let statusBody = null;
+    if (entry.workspace.startsWith("ws-")) {
+      const statusRes = await api(`/workspace/status?workspace=${encodeURIComponent(entry.workspace)}`);
+      statusBody = statusRes.body;
+    }
+    const card = renderWorkspaceCard(entry, statusBody);
     workspaceListEl.append(card);
   }
 }
@@ -261,6 +260,7 @@ document.getElementById("runBtn").onclick = async () => {
 document.getElementById("epBtn").onclick = async () => {
   const ws = document.getElementById("epWorkspace").value.trim();
   const app = document.getElementById("epApp").value.trim();
+  if (!ws || !app) return;
   await handleRequest("GET", `/endpoint?workspace=${encodeURIComponent(ws)}&app=${encodeURIComponent(app)}`);
 };
 
@@ -270,16 +270,19 @@ document.getElementById("wsList").onclick = async () => {
 
 document.getElementById("wsStatus").onclick = async () => {
   const ws = document.getElementById("wsName").value.trim();
+  if (!ws) return;
   await handleRequest("GET", `/workspace/status?workspace=${encodeURIComponent(ws)}`);
 };
 
 document.getElementById("wsDelete").onclick = async () => {
   const ws = document.getElementById("wsName").value.trim();
+  if (!ws) return;
   await handleRequest("POST", `/workspace/delete?workspace=${encodeURIComponent(ws)}`, { method: "POST" });
 };
 
 document.getElementById("wsRestart").onclick = async () => {
   const ws = document.getElementById("wsName").value.trim();
+  if (!ws) return;
   await handleRequest("POST", `/workspace/restart?workspace=${encodeURIComponent(ws)}`, { method: "POST" });
 };
 
@@ -287,24 +290,28 @@ document.getElementById("wsScale").onclick = async () => {
   const ws = document.getElementById("wsName").value.trim();
   const app = document.getElementById("wsScaleApp").value.trim();
   const rep = document.getElementById("wsScaleRep").value.trim();
+  if (!ws || !app || !rep) return;
   await handleRequest("POST", `/workspace/scale?workspace=${encodeURIComponent(ws)}&app=${encodeURIComponent(app)}&replicas=${encodeURIComponent(rep)}`, { method: "POST" });
 };
 
 document.getElementById("appStatus").onclick = async () => {
   const ws = document.getElementById("appWs").value.trim();
   const app = document.getElementById("appName").value.trim();
+  if (!ws || !app) return;
   await handleRequest("GET", `/app/status?workspace=${encodeURIComponent(ws)}&app=${encodeURIComponent(app)}`);
 };
 
 document.getElementById("appRestart").onclick = async () => {
   const ws = document.getElementById("appWs").value.trim();
   const app = document.getElementById("appName").value.trim();
+  if (!ws || !app) return;
   await handleRequest("POST", `/app/restart?workspace=${encodeURIComponent(ws)}&app=${encodeURIComponent(app)}`, { method: "POST" });
 };
 
 document.getElementById("appDelete").onclick = async () => {
   const ws = document.getElementById("appWs").value.trim();
   const app = document.getElementById("appName").value.trim();
+  if (!ws || !app) return;
   await handleRequest("POST", `/app/delete?workspace=${encodeURIComponent(ws)}&app=${encodeURIComponent(app)}`, { method: "POST" });
 };
 
