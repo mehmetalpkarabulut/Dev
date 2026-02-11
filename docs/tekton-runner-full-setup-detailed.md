@@ -848,4 +848,4 @@ Swagger / OpenAPI:
 - OpenAPI JSON: `http://<HOST_IP>:8088/openapi.json`
 
 Web UI (MVP):
-- UI: `http://<HOST_IP>:3000` (RUNNER_BASE_URL varsayilan: `http://127.0.0.1:8088`)
+- UI: `http://<HOST_IP>:8088/ui/`

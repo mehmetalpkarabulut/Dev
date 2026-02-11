@@ -476,6 +476,15 @@ func runServer(addr, apiKey string) {
 		w.Write([]byte(swaggerHTML()))
 	})
 
+	// Optional UI at /ui/ (served from ./ui next to the binary)
+	if uiDir := findUIDir(); uiDir != "" {
+		fs := http.FileServer(http.Dir(uiDir))
+		http.Handle("/ui/", http.StripPrefix("/ui/", fs))
+		http.HandleFunc("/ui", func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, "/ui/", http.StatusFound)
+		})
+	}
+
 	log.Printf("listening on %s", addr)
 	log.Fatal(http.ListenAndServe(addr, nil))
 }
@@ -1077,6 +1086,26 @@ func swaggerHTML() string {
     </script>
   </body>
 </html>`
+}
+
+func findUIDir() string {
+	exe, err := os.Executable()
+	if err == nil {
+		if dir := filepath.Dir(exe); dir != "" {
+			if fileExists(filepath.Join(dir, "ui", "index.html")) {
+				return filepath.Join(dir, "ui")
+			}
+		}
+	}
+	if fileExists(filepath.Join("ui", "index.html")) {
+		return "ui"
+	}
+	return ""
+}
+
+func fileExists(path string) bool {
+	st, err := os.Stat(path)
+	return err == nil && !st.IsDir()
 }
 
 func getWorkspaceStatus(workspace string) ([]byte, error) {

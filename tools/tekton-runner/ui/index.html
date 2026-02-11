@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Tekton Runner MVP</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="bg"></div>
+    <header class="top">
+      <div>
+        <div class="kicker">Tekton Runner</div>
+        <h1>Build, Push, Deploy — tek ekrandan</h1>
+        <p class="sub">
+          Swagger’daki tüm endpointleri hızlıca çağırmak için basit bir MVP arayüz.
+          Arka planda Node proxy, Tekton Runner’a güvenli şekilde istek gönderir.
+        </p>
+      </div>
+      <div class="status">
+        <div class="badge" id="healthBadge">HEALTH: ?</div>
+        <button id="healthBtn">Health Check</button>
+        <div class="hint">Runner hedefi: <span id="runnerBase">/api → RUNNER_BASE_URL</span></div>
+      </div>
+    </header>
+
+    <main class="grid">
+      <section class="card">
+        <div class="card-title">/run — Build & Push</div>
+        <div class="row">
+          <button class="ghost" id="sampleGit">Git örneği</button>
+          <button class="ghost" id="sampleZip">ZIP örneği</button>
+          <button class="ghost" id="sampleLocal">Local örneği</button>
+        </div>
+        <textarea id="runBody" spellcheck="false"></textarea>
+        <div class="row">
+          <button id="runBtn">POST /run</button>
+          <div class="note">Yanıt 202 ise TaskRun yaratıldı.</div>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="card-title">/endpoint</div>
+        <div class="row">
+          <input id="epWorkspace" placeholder="workspace" />
+          <input id="epApp" placeholder="app" />
+        </div>
+        <div class="row">
+          <button id="epBtn">GET /endpoint</button>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="card-title">Workspace</div>
+        <div class="row">
+          <input id="wsName" placeholder="workspace" />
+        </div>
+        <div class="row">
+          <button class="ghost" id="wsList">GET /workspaces</button>
+          <button class="ghost" id="wsStatus">GET /workspace/status</button>
+        </div>
+        <div class="row">
+          <button class="danger" id="wsDelete">POST /workspace/delete</button>
+          <button class="ghost" id="wsRestart">POST /workspace/restart</button>
+        </div>
+        <div class="row">
+          <input id="wsScaleApp" placeholder="app" />
+          <input id="wsScaleRep" type="number" min="1" value="1" />
+          <button class="ghost" id="wsScale">POST /workspace/scale</button>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="card-title">App</div>
+        <div class="row">
+          <input id="appWs" placeholder="workspace" />
+          <input id="appName" placeholder="app" />
+        </div>
+        <div class="row">
+          <button class="ghost" id="appStatus">GET /app/status</button>
+          <button class="ghost" id="appRestart">POST /app/restart</button>
+          <button class="danger" id="appDelete">POST /app/delete</button>
+        </div>
+      </section>
+
+      <section class="card wide">
+        <div class="card-title">Response Console</div>
+        <pre id="console"></pre>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <div>Tek kullanıcı MVP — Swagger ile birebir uyumlu</div>
+    </footer>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

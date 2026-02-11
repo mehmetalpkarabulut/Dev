@@ -4,6 +4,7 @@ const fs = require("fs");
 const path = require("path");
 
 const PORT = process.env.PORT || 3000;
+const HOST = process.env.HOST || "127.0.0.1";
 const RUNNER_BASE_URL = process.env.RUNNER_BASE_URL || "http://127.0.0.1:8088";
 const UI_DIR = path.join(__dirname, "ui");
 
@@ -72,7 +73,7 @@ const server = http.createServer((req, res) => {
   return serveStatic(req, res);
 });
 
-server.listen(PORT, () => {
-  console.log(`UI server running on port ${PORT}`);
+server.listen(PORT, HOST, () => {
+  console.log(`UI server running on ${HOST}:${PORT}`);
   console.log(`Runner base: ${RUNNER_BASE_URL}`);
 });
