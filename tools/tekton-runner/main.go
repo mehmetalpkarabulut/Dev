@@ -280,10 +280,10 @@ func runServer(addr, apiKey string) {
 			}
 		}
 
-		if in.Source.Type == "zip" && in.AppName != "" && taskRunName != "" {
+		if in.AppName != "" && taskRunName != "" && (in.Source.Type == "zip" || in.Source.Type == "git" || in.Source.Type == "local") {
 			go func(req Input, tr string) {
 				if err := handleZipDeploy(req, tr); err != nil {
-					log.Printf("zip deploy error: %v", err)
+					log.Printf("deploy error: %v", err)
 				}
 			}(in, taskRunName)
 		}
