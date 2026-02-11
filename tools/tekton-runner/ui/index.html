@@ -3,102 +3,110 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Tekton Runner MVP</title>
+    <title>Tekton Runner Console</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="/styles.css" />
+    <link rel="stylesheet" href="/ui/styles.css" />
   </head>
   <body>
-    <div class="bg"></div>
-    <header class="top">
-      <div>
-        <div class="kicker">Tekton Runner</div>
-        <h1>Build, Push, Deploy — tek ekrandan</h1>
-        <p class="sub">
-          Swagger’daki tüm endpointleri hızlıca çağırmak için basit bir MVP arayüz.
-          Arka planda Node proxy, Tekton Runner’a güvenli şekilde istek gönderir.
-        </p>
+    <div class="noise"></div>
+    <header class="topbar">
+      <div class="brand">
+        <div class="logo">TR</div>
+        <div>
+          <div class="kicker">Tekton Runner</div>
+          <div class="title">Build & Deploy Console</div>
+          <div class="subtitle">Üretim seviyesine yakın MVP arayüzü</div>
+        </div>
       </div>
-      <div class="status">
-        <div class="badge" id="healthBadge">HEALTH: ?</div>
-        <button id="healthBtn">Health Check</button>
-        <div class="hint">Runner hedefi: <span id="runnerBase">/api → RUNNER_BASE_URL</span></div>
+      <div class="statusbar">
+        <div class="pill" id="healthBadge">HEALTH: ?</div>
+        <button class="btn accent" id="healthBtn">Health Check</button>
+        <div class="meta">Runner: <span id="runnerBase">/api → RUNNER_BASE_URL</span></div>
       </div>
     </header>
 
-    <main class="grid">
-      <section class="card">
-        <div class="card-title">/run — Build & Push</div>
-        <div class="row">
-          <button class="ghost" id="sampleGit">Git örneği</button>
-          <button class="ghost" id="sampleZip">ZIP örneği</button>
-          <button class="ghost" id="sampleLocal">Local örneği</button>
+    <div class="shell">
+      <aside class="sidebar">
+        <div class="section">
+          <div class="section-title">Quick Actions</div>
+          <button class="btn ghost" id="sampleGit">Git Sample</button>
+          <button class="btn ghost" id="sampleZip">ZIP Sample</button>
+          <button class="btn ghost" id="sampleLocal">Local Sample</button>
         </div>
-        <textarea id="runBody" spellcheck="false"></textarea>
-        <div class="row">
-          <button id="runBtn">POST /run</button>
-          <div class="note">Yanıt 202 ise TaskRun yaratıldı.</div>
+        <div class="section">
+          <div class="section-title">Tips</div>
+          <div class="tip">`/run` 202 dönerse TaskRun oluşur.</div>
+          <div class="tip">`/endpoint` ile erişim URL’si gelir.</div>
+          <div class="tip">`/workspace/*` ile cluster yönetimi yapılır.</div>
         </div>
-      </section>
+      </aside>
 
-      <section class="card">
-        <div class="card-title">/endpoint</div>
-        <div class="row">
-          <input id="epWorkspace" placeholder="workspace" />
-          <input id="epApp" placeholder="app" />
-        </div>
-        <div class="row">
-          <button id="epBtn">GET /endpoint</button>
-        </div>
-      </section>
+      <main class="main">
+        <section class="card wide">
+          <div class="card-header">
+            <div>
+              <div class="card-title">/run — Build & Push</div>
+              <div class="card-sub">JSON payload ile TaskRun tetikleyin</div>
+            </div>
+            <button class="btn accent" id="runBtn">POST /run</button>
+          </div>
+          <textarea id="runBody" spellcheck="false"></textarea>
+        </section>
 
-      <section class="card">
-        <div class="card-title">Workspace</div>
-        <div class="row">
-          <input id="wsName" placeholder="workspace" />
-        </div>
-        <div class="row">
-          <button class="ghost" id="wsList">GET /workspaces</button>
-          <button class="ghost" id="wsStatus">GET /workspace/status</button>
-        </div>
-        <div class="row">
-          <button class="danger" id="wsDelete">POST /workspace/delete</button>
-          <button class="ghost" id="wsRestart">POST /workspace/restart</button>
-        </div>
-        <div class="row">
-          <input id="wsScaleApp" placeholder="app" />
-          <input id="wsScaleRep" type="number" min="1" value="1" />
-          <button class="ghost" id="wsScale">POST /workspace/scale</button>
-        </div>
-      </section>
+        <section class="card">
+          <div class="card-title">/endpoint</div>
+          <div class="row">
+            <input id="epWorkspace" placeholder="workspace" />
+            <input id="epApp" placeholder="app" />
+          </div>
+          <button class="btn ghost" id="epBtn">GET /endpoint</button>
+        </section>
 
-      <section class="card">
-        <div class="card-title">App</div>
-        <div class="row">
-          <input id="appWs" placeholder="workspace" />
-          <input id="appName" placeholder="app" />
-        </div>
-        <div class="row">
-          <button class="ghost" id="appStatus">GET /app/status</button>
-          <button class="ghost" id="appRestart">POST /app/restart</button>
-          <button class="danger" id="appDelete">POST /app/delete</button>
-        </div>
-      </section>
+        <section class="card">
+          <div class="card-title">Workspace</div>
+          <div class="row">
+            <input id="wsName" placeholder="workspace" />
+          </div>
+          <div class="row">
+            <button class="btn ghost" id="wsList">GET /workspaces</button>
+            <button class="btn ghost" id="wsStatus">GET /workspace/status</button>
+          </div>
+          <div class="row">
+            <button class="btn danger" id="wsDelete">POST /workspace/delete</button>
+            <button class="btn ghost" id="wsRestart">POST /workspace/restart</button>
+          </div>
+          <div class="row">
+            <input id="wsScaleApp" placeholder="app" />
+            <input id="wsScaleRep" type="number" min="1" value="1" />
+            <button class="btn ghost" id="wsScale">POST /workspace/scale</button>
+          </div>
+        </section>
 
-      <section class="card wide">
-        <div class="card-title">Response Console</div>
-        <pre id="console"></pre>
-      </section>
-    </main>
+        <section class="card">
+          <div class="card-title">App</div>
+          <div class="row">
+            <input id="appWs" placeholder="workspace" />
+            <input id="appName" placeholder="app" />
+          </div>
+          <div class="row">
+            <button class="btn ghost" id="appStatus">GET /app/status</button>
+            <button class="btn ghost" id="appRestart">POST /app/restart</button>
+            <button class="btn danger" id="appDelete">POST /app/delete</button>
+          </div>
+        </section>
 
-    <footer class="footer">
-      <div>Tek kullanıcı MVP — Swagger ile birebir uyumlu</div>
-    </footer>
+        <section class="card wide">
+          <div class="card-title">Response Console</div>
+          <pre id="console"></pre>
+        </section>
+      </main>
+    </div>
 
-    <script src="/app.js"></script>
+    <script src="/ui/app.js"></script>
   </body>
 </html>
