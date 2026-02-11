@@ -846,3 +846,6 @@ kubectl logs -n tekton-pipelines pod/<POD_ADI> -c step-build
 Swagger / OpenAPI:
 - Swagger UI: `http://<HOST_IP>:8088/docs`
 - OpenAPI JSON: `http://<HOST_IP>:8088/openapi.json`
+
+Web UI (MVP):
+- UI: `http://<HOST_IP>:3000` (RUNNER_BASE_URL varsayilan: `http://127.0.0.1:8088`)
