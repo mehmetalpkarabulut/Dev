@@ -699,7 +699,8 @@ func ensureKindCluster(name, kubeconfigPath string) error {
 		return fmt.Errorf("kind get clusters: %v", err)
 	}
 	if !strings.Contains(string(out), name) {
-		cmd = exec.Command("kind", "create", "cluster", "--name", name)
+		image := kindNodeImage()
+		cmd = exec.Command("kind", "create", "cluster", "--name", name, "--image", image)
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		if err := cmd.Run(); err != nil {
@@ -717,6 +718,13 @@ func ensureKindCluster(name, kubeconfigPath string) error {
 		return fmt.Errorf("kind get kubeconfig: %v", err)
 	}
 	return os.WriteFile(kubeconfigPath, out, 0o600)
+}
+
+func kindNodeImage() string {
+	if v := strings.TrimSpace(os.Getenv("KIND_NODE_IMAGE")); v != "" {
+		return v
+	}
+	return "kindest/node:v1.31.4"
 }
 
 func configureKindNode(clusterName string) error {
