@@ -1,10 +1,33 @@
-const consoleEl = document.getElementById("console");
 const healthBadge = document.getElementById("healthBadge");
 const runnerBase = document.getElementById("runnerBase");
+const activityEl = document.getElementById("activity");
 
-function log(obj) {
-  const text = typeof obj === "string" ? obj : JSON.stringify(obj, null, 2);
-  consoleEl.textContent = text + "\n" + consoleEl.textContent;
+function addActivity(entry) {
+  const card = document.createElement("div");
+  card.className = "activity-card";
+
+  const head = document.createElement("div");
+  head.className = "activity-head";
+
+  const left = document.createElement("div");
+  left.textContent = `${entry.method} ${entry.endpoint}`;
+
+  const tag = document.createElement("div");
+  tag.className = `tag ${entry.status >= 200 && entry.status < 300 ? "ok" : entry.status >= 400 && entry.status < 500 ? "warn" : "err"}`;
+  tag.textContent = entry.status;
+
+  head.append(left, tag);
+
+  const meta = document.createElement("div");
+  meta.className = "activity-head";
+  meta.textContent = entry.timestamp;
+
+  const body = document.createElement("pre");
+  body.className = "activity-code";
+  body.textContent = entry.bodyText;
+
+  card.append(head, meta, body);
+  activityEl.prepend(card);
 }
 
 async function api(path, options = {}) {
@@ -14,11 +37,28 @@ async function api(path, options = {}) {
   return { status: res.status, body };
 }
 
+function stringifyBody(body) {
+  if (typeof body === "string") return body;
+  return JSON.stringify(body, null, 2);
+}
+
+async function handleRequest(method, endpoint, options) {
+  const res = await api(endpoint, options);
+  addActivity({
+    method,
+    endpoint,
+    status: res.status,
+    bodyText: stringifyBody(res.body),
+    timestamp: new Date().toLocaleString()
+  });
+  return res;
+}
+
 async function healthCheck() {
   try {
-    const { status } = await api("/healthz");
-    healthBadge.textContent = `HEALTH: ${status}`;
-    healthBadge.style.color = status === 200 ? "#37d6a5" : "#ff6d6d";
+    const res = await api("/healthz");
+    healthBadge.textContent = `HEALTH: ${res.status}`;
+    healthBadge.style.color = res.status === 200 ? "#37d6a5" : "#ff6d6d";
   } catch (err) {
     healthBadge.textContent = "HEALTH: ERR";
     healthBadge.style.color = "#ff6d6d";
@@ -85,81 +125,72 @@ document.getElementById("sampleLocal").onclick = () => {
 
 runnerBase.textContent = "Same origin";
 
-// Buttons
-
 document.getElementById("healthBtn").onclick = async () => {
-  const res = await api("/healthz");
-  log({ endpoint: "/healthz", ...res });
+  await handleRequest("GET", "/healthz");
   healthCheck();
 };
 
 document.getElementById("runBtn").onclick = async () => {
   const body = document.getElementById("runBody").value;
-  const res = await api("/run", {
+  await handleRequest("POST", "/run", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body
   });
-  log({ endpoint: "/run", ...res });
 };
 
 document.getElementById("epBtn").onclick = async () => {
   const ws = document.getElementById("epWorkspace").value.trim();
   const app = document.getElementById("epApp").value.trim();
-  const res = await api(`/endpoint?workspace=${encodeURIComponent(ws)}&app=${encodeURIComponent(app)}`);
-  log({ endpoint: "/endpoint", ...res });
+  await handleRequest("GET", `/endpoint?workspace=${encodeURIComponent(ws)}&app=${encodeURIComponent(app)}`);
 };
 
 document.getElementById("wsList").onclick = async () => {
-  const res = await api("/workspaces");
-  log({ endpoint: "/workspaces", ...res });
+  await handleRequest("GET", "/workspaces");
 };
 
 document.getElementById("wsStatus").onclick = async () => {
   const ws = document.getElementById("wsName").value.trim();
-  const res = await api(`/workspace/status?workspace=${encodeURIComponent(ws)}`);
-  log({ endpoint: "/workspace/status", ...res });
+  await handleRequest("GET", `/workspace/status?workspace=${encodeURIComponent(ws)}`);
 };
 
 document.getElementById("wsDelete").onclick = async () => {
   const ws = document.getElementById("wsName").value.trim();
-  const res = await api(`/workspace/delete?workspace=${encodeURIComponent(ws)}`, { method: "POST" });
-  log({ endpoint: "/workspace/delete", ...res });
+  await handleRequest("POST", `/workspace/delete?workspace=${encodeURIComponent(ws)}`, { method: "POST" });
 };
 
 document.getElementById("wsRestart").onclick = async () => {
   const ws = document.getElementById("wsName").value.trim();
-  const res = await api(`/workspace/restart?workspace=${encodeURIComponent(ws)}`, { method: "POST" });
-  log({ endpoint: "/workspace/restart", ...res });
+  await handleRequest("POST", `/workspace/restart?workspace=${encodeURIComponent(ws)}`, { method: "POST" });
 };
 
 document.getElementById("wsScale").onclick = async () => {
   const ws = document.getElementById("wsName").value.trim();
   const app = document.getElementById("wsScaleApp").value.trim();
   const rep = document.getElementById("wsScaleRep").value.trim();
-  const res = await api(`/workspace/scale?workspace=${encodeURIComponent(ws)}&app=${encodeURIComponent(app)}&replicas=${encodeURIComponent(rep)}`, { method: "POST" });
-  log({ endpoint: "/workspace/scale", ...res });
+  await handleRequest("POST", `/workspace/scale?workspace=${encodeURIComponent(ws)}&app=${encodeURIComponent(app)}&replicas=${encodeURIComponent(rep)}`, { method: "POST" });
 };
 
 document.getElementById("appStatus").onclick = async () => {
   const ws = document.getElementById("appWs").value.trim();
   const app = document.getElementById("appName").value.trim();
-  const res = await api(`/app/status?workspace=${encodeURIComponent(ws)}&app=${encodeURIComponent(app)}`);
-  log({ endpoint: "/app/status", ...res });
+  await handleRequest("GET", `/app/status?workspace=${encodeURIComponent(ws)}&app=${encodeURIComponent(app)}`);
 };
 
 document.getElementById("appRestart").onclick = async () => {
   const ws = document.getElementById("appWs").value.trim();
   const app = document.getElementById("appName").value.trim();
-  const res = await api(`/app/restart?workspace=${encodeURIComponent(ws)}&app=${encodeURIComponent(app)}`, { method: "POST" });
-  log({ endpoint: "/app/restart", ...res });
+  await handleRequest("POST", `/app/restart?workspace=${encodeURIComponent(ws)}&app=${encodeURIComponent(app)}`, { method: "POST" });
 };
 
 document.getElementById("appDelete").onclick = async () => {
   const ws = document.getElementById("appWs").value.trim();
   const app = document.getElementById("appName").value.trim();
-  const res = await api(`/app/delete?workspace=${encodeURIComponent(ws)}&app=${encodeURIComponent(app)}`, { method: "POST" });
-  log({ endpoint: "/app/delete", ...res });
+  await handleRequest("POST", `/app/delete?workspace=${encodeURIComponent(ws)}&app=${encodeURIComponent(app)}`, { method: "POST" });
+};
+
+document.getElementById("clearLog").onclick = () => {
+  activityEl.innerHTML = "";
 };
 
 healthCheck();

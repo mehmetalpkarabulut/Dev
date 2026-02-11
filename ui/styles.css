@@ -223,18 +223,6 @@ input {
   padding: 10px 12px;
 }
 
-pre {
-  background: var(--panel-2);
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  padding: 12px;
-  font-family: var(--mono);
-  font-size: 12px;
-  color: #cfe2ff;
-  max-height: 380px;
-  overflow: auto;
-}
-
 .btn {
   border: 1px solid transparent;
   border-radius: 12px;
@@ -269,6 +257,65 @@ pre {
 }
 
 .wide { grid-column: span 2; }
+
+.activity {
+  display: grid;
+  gap: 10px;
+}
+
+.activity-card {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 12px;
+  background: var(--panel-2);
+  display: grid;
+  gap: 6px;
+}
+
+.activity-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.activity-code {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: #d5e6ff;
+  background: #0c1017;
+  border-radius: 10px;
+  padding: 10px;
+  overflow: auto;
+}
+
+.tag {
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  border: 1px solid transparent;
+}
+
+.tag.ok {
+  background: rgba(55, 214, 165, 0.15);
+  color: #55f0c2;
+  border-color: rgba(55, 214, 165, 0.4);
+}
+
+.tag.warn {
+  background: rgba(255, 201, 88, 0.15);
+  color: #ffcf7a;
+  border-color: rgba(255, 201, 88, 0.4);
+}
+
+.tag.err {
+  background: rgba(255, 109, 109, 0.12);
+  color: #ff8b8b;
+  border-color: rgba(255, 109, 109, 0.4);
+}
 
 @media (max-width: 1100px) {
   .shell { grid-template-columns: 1fr; }
