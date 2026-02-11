@@ -13,6 +13,7 @@ let endpointInFlight = {};
 let wsPollTimer = null;
 let hostInfo = { host_ip: "" };
 let externalMap = [];
+let externalInFlight = {};
 
 function addActivity(entry) {
   activityCache.unshift(entry);
@@ -118,13 +119,18 @@ async function setExternalPort(ws, app, port) {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ workspace: ws, app, external_port: port })
-  });
+  }, true);
   if (res.status === 200) {
     await loadExternalMap();
     renderWorkspaceDetail();
     return true;
   }
   return false;
+}
+
+function defaultExternalPort(nodePort) {
+  if (!nodePort) return null;
+  return 18000 + (nodePort % 1000);
 }
 
 function stopWorkspacePoll() {
@@ -319,9 +325,10 @@ function renderWorkspaceDetail() {
   appCount.className = "detail-card";
   appCount.innerHTML = `<div class="detail-label">Apps</div><div class="detail-value">${apps.length}</div>`;
 
+  const statusText = statusEntry.fetchedAt ? (statusEntry.ok ? "OK" : "FAIL") : "PENDING";
   const statusCard = document.createElement("div");
   statusCard.className = "detail-card";
-  statusCard.innerHTML = `<div class="detail-label">Status</div><div class="detail-value">${statusEntry.ok ? "OK" : "FAIL"}</div>
+  statusCard.innerHTML = `<div class="detail-label">Status</div><div class="detail-value">${statusText}</div>
     <div class="detail-label">Last Update</div><div class="detail-value">${statusEntry.fetchedAt || "-"}</div>`;
 
   info.append(nameCard, appCount, statusCard);
@@ -358,7 +365,20 @@ function renderWorkspaceDetail() {
     const nodePort = getServicePort(status, name);
     const epKey = endpointKey(currentWorkspace, name);
     const endpoint = endpointCache[epKey] || "loading...";
-    const externalPort = getExternalPort(currentWorkspace, name);
+
+    const defaultPort = defaultExternalPort(nodePort);
+    const externalPort = getExternalPort(currentWorkspace, name) || defaultPort;
+
+    if (defaultPort && !getExternalPort(currentWorkspace, name)) {
+      const key = endpointKey(currentWorkspace, name);
+      if (!externalInFlight[key]) {
+        externalInFlight[key] = true;
+        setExternalPort(currentWorkspace, name, defaultPort).finally(() => {
+          externalInFlight[key] = false;
+        });
+      }
+    }
+
     const externalUrl = externalPort && hostInfo.host_ip ? `http://${hostInfo.host_ip}:${externalPort}` : "-";
 
     ensureEndpoint(currentWorkspace, name);
