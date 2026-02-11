@@ -179,6 +179,7 @@ http://<HOST_IP>:8088/workspaces
 ```json
 {
   "app_name": "demoapp",
+  "workspace": "ws-demo",
   "source": {
     "type": "zip",
     "zip_url": "https://example.com/app.zip",

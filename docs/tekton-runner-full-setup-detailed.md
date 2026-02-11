@@ -716,6 +716,7 @@ roleRef:
 ```json
 {
   "app_name": "demoapp",
+  "workspace": "ws-demo",
   "source": {
     "type": "zip",
     "zip_url": "https://example.com/app.zip",
@@ -735,7 +736,7 @@ roleRef:
 
 Bu istek basarili olduktan sonra endpoint almak icin:
 ```
-http://<HOST_IP>:8088/endpoint?workspace=ws-demoapp&app=demoapp
+http://<HOST_IP>:8088/endpoint?workspace=ws-demo&app=demoapp
 ```
 
 ---

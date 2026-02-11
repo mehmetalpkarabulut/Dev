@@ -24,6 +24,7 @@ type Input struct {
 	Namespace string `json:"namespace"`
 	Task      string `json:"task"`
 	AppName   string `json:"app_name"`
+	Workspace string `json:"workspace"`
 	Deploy    Deploy `json:"deploy"`
 	Source    Source `json:"source"`
 	Image     Image  `json:"image"`
@@ -370,7 +371,10 @@ func handleZipDeploy(in Input, taskRunName string) error {
 		return err
 	}
 
-	clusterName := "ws-" + sanitizeName(in.AppName)
+	clusterName := in.Workspace
+	if clusterName == "" {
+		clusterName = "ws-" + sanitizeName(in.AppName)
+	}
 	kcfgDir := "/home/beko/kubeconfigs"
 	if err := os.MkdirAll(kcfgDir, 0o755); err != nil {
 		return err
@@ -634,6 +638,9 @@ func validate(in *Input) error {
 		if in.AppName == "" {
 			return fmt.Errorf("app_name is required for zip deployments")
 		}
+	}
+	if in.Workspace != "" && !strings.HasPrefix(in.Workspace, "ws-") {
+		return fmt.Errorf("workspace must start with ws-")
 	}
 	return nil
 }
