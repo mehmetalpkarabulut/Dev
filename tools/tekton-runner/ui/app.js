@@ -8,6 +8,7 @@ let currentApp = null;
 let workspacesCache = [];
 let activityCache = [];
 let wsStatusCache = {};
+let wsPollTimer = null;
 
 function addActivity(entry) {
   activityCache.unshift(entry);
@@ -57,14 +58,16 @@ function toMessage(body) {
   return "OK";
 }
 
-async function handleRequest(method, endpoint, options) {
+async function handleRequest(method, endpoint, options, quiet = false) {
   const res = await api(endpoint, options);
-  addActivity({
-    method,
-    endpoint,
-    status: res.status,
-    message: toMessage(res.body)
-  });
+  if (!quiet) {
+    addActivity({
+      method,
+      endpoint,
+      status: res.status,
+      message: toMessage(res.body)
+    });
+  }
   return res;
 }
 
@@ -79,10 +82,27 @@ async function healthCheck() {
   }
 }
 
+function stopWorkspacePoll() {
+  if (wsPollTimer) {
+    clearInterval(wsPollTimer);
+    wsPollTimer = null;
+  }
+}
+
+function startWorkspacePoll(ws) {
+  stopWorkspacePoll();
+  if (!ws || !ws.startsWith("ws-")) return;
+  wsPollTimer = setInterval(() => {
+    refreshWorkspaceStatus(ws, true);
+  }, 5000);
+}
+
 function setCurrentWorkspace(ws) {
   currentWorkspace = ws;
   currentApp = null;
   renderWorkspaceDetail();
+  refreshWorkspaceStatus(ws, true);
+  startWorkspacePoll(ws);
 }
 
 function setCurrentApp(app) {
@@ -162,12 +182,12 @@ async function refreshWorkspaces() {
     workspaceListEl.append(renderWorkspaceCard(entry));
   });
 
-  await refreshWorkspaceStatus(currentWorkspace);
+  await refreshWorkspaceStatus(currentWorkspace, true);
 }
 
-async function refreshWorkspaceStatus(ws) {
+async function refreshWorkspaceStatus(ws, quiet = false) {
   if (!ws || !ws.startsWith("ws-")) return;
-  const res = await api(`/workspace/status?workspace=${encodeURIComponent(ws)}`);
+  const res = await handleRequest("GET", `/workspace/status?workspace=${encodeURIComponent(ws)}`, {}, quiet);
   if (res.status === 200) {
     wsStatusCache[ws] = res.body;
     renderWorkspaceDetail();
@@ -221,7 +241,7 @@ function renderWorkspaceDetail() {
   statusBtn.className = "btn ghost";
   statusBtn.textContent = "Refresh Status";
   statusBtn.onclick = async () => {
-    await refreshWorkspaceStatus(currentWorkspace);
+    await refreshWorkspaceStatus(currentWorkspace, false);
   };
 
   const restartBtn = document.createElement("button");
@@ -238,6 +258,7 @@ function renderWorkspaceDetail() {
     await handleRequest("POST", `/workspace/delete?workspace=${encodeURIComponent(currentWorkspace)}`, { method: "POST" });
     await refreshWorkspaces();
     currentWorkspace = null;
+    stopWorkspacePoll();
     renderWorkspaceDetail();
   };
 
@@ -273,13 +294,6 @@ function renderWorkspaceDetail() {
       }
     };
 
-    const statusAppBtn = document.createElement("button");
-    statusAppBtn.className = "btn ghost";
-    statusAppBtn.textContent = "Status";
-    statusAppBtn.onclick = async () => {
-      await handleRequest("GET", `/app/status?workspace=${encodeURIComponent(currentWorkspace)}&app=${encodeURIComponent(name)}`);
-    };
-
     const restartAppBtn = document.createElement("button");
     restartAppBtn.className = "btn ghost";
     restartAppBtn.textContent = "Restart";
@@ -308,11 +322,11 @@ function renderWorkspaceDetail() {
     scaleBtn.textContent = "Scale";
     scaleBtn.onclick = async () => {
       await handleRequest("POST", `/workspace/scale?workspace=${encodeURIComponent(currentWorkspace)}&app=${encodeURIComponent(name)}&replicas=${encodeURIComponent(scaleInput.value)}`, { method: "POST" });
-      await refreshWorkspaceStatus(currentWorkspace);
+      await refreshWorkspaceStatus(currentWorkspace, true);
     };
     scaleWrap.append(scaleInput, scaleBtn);
 
-    btns.append(endpointBtn, statusAppBtn, restartAppBtn, deleteAppBtn);
+    btns.append(endpointBtn, restartAppBtn, deleteAppBtn);
 
     card.append(btns, scaleWrap);
     appSection.append(card);
