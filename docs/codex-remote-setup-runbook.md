@@ -199,6 +199,16 @@ Replica sayisi degistirme:
 http://<HOST_IP>:8088/workspace/scale?workspace=ws-<name>&app=<app>&replicas=<n>
 ```
 
+Tek uygulama restart:
+```
+http://<HOST_IP>:8088/app/restart?workspace=ws-<name>&app=<app>
+```
+
+Tum workspace restart:
+```
+http://<HOST_IP>:8088/workspace/restart?workspace=ws-<name>
+```
+
 ## Ornek ZIP JSON (workspace + otomatik kind)
 
 ```json

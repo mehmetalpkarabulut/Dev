@@ -416,6 +416,53 @@ func runServer(addr, apiKey string) {
 		w.Write([]byte(`{"status":"scaled"}`))
 	})
 
+	http.HandleFunc("/app/restart", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		workspace := r.URL.Query().Get("workspace")
+		app := r.URL.Query().Get("app")
+		if workspace == "" || app == "" {
+			http.Error(w, "workspace and app are required", http.StatusBadRequest)
+			return
+		}
+		if !strings.HasPrefix(workspace, "ws-") {
+			http.Error(w, "workspace must start with ws-", http.StatusBadRequest)
+			return
+		}
+		if err := rolloutRestart(workspace, app); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"status":"restarted"}`))
+	})
+
+	http.HandleFunc("/workspace/restart", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		workspace := r.URL.Query().Get("workspace")
+		if workspace == "" {
+			http.Error(w, "workspace is required", http.StatusBadRequest)
+			return
+		}
+		if !strings.HasPrefix(workspace, "ws-") {
+			http.Error(w, "workspace must start with ws-", http.StatusBadRequest)
+			return
+		}
+		if err := rolloutRestartAll(workspace); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"status":"restarted"}`))
+	})
+
 	log.Printf("listening on %s", addr)
 	log.Fatal(http.ListenAndServe(addr, nil))
 }
@@ -781,6 +828,28 @@ func scaleApp(workspace, app, replicas string) error {
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("scale deployment: %v", err)
+	}
+	return nil
+}
+
+func rolloutRestart(workspace, app string) error {
+	kcfg := filepath.Join("/home/beko/kubeconfigs", workspace+".yaml")
+	cmd := exec.Command("kubectl", "--kubeconfig", kcfg, "-n", workspace, "rollout", "restart", "deployment", app)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("rollout restart: %v", err)
+	}
+	return nil
+}
+
+func rolloutRestartAll(workspace string) error {
+	kcfg := filepath.Join("/home/beko/kubeconfigs", workspace+".yaml")
+	cmd := exec.Command("kubectl", "--kubeconfig", kcfg, "-n", workspace, "rollout", "restart", "deployment", "-l", "app")
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("rollout restart all: %v", err)
 	}
 	return nil
 }
