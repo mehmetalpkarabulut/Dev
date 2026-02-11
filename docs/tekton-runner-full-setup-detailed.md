@@ -594,6 +594,16 @@ Tek uygulama silme:
 http://<HOST_IP>:8088/app/delete?workspace=ws-<name>&app=<app>
 ```
 
+Tek uygulama durumu:
+```
+http://<HOST_IP>:8088/app/status?workspace=ws-<name>&app=<app>
+```
+
+Replica sayisi degistirme:
+```
+http://<HOST_IP>:8088/workspace/scale?workspace=ws-<name>&app=<app>&replicas=<n>
+```
+
 ---
 
 ## 17) RBAC (Opsiyonel)

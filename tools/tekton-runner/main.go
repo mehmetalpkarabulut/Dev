@@ -371,6 +371,51 @@ func runServer(addr, apiKey string) {
 		w.Write([]byte(`{"status":"deleted"}`))
 	})
 
+	http.HandleFunc("/app/status", func(w http.ResponseWriter, r *http.Request) {
+		workspace := r.URL.Query().Get("workspace")
+		app := r.URL.Query().Get("app")
+		if workspace == "" || app == "" {
+			http.Error(w, "workspace and app are required", http.StatusBadRequest)
+			return
+		}
+		if !strings.HasPrefix(workspace, "ws-") {
+			http.Error(w, "workspace must start with ws-", http.StatusBadRequest)
+			return
+		}
+		info, err := getAppStatus(workspace, app)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(info)
+	})
+
+	http.HandleFunc("/workspace/scale", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		workspace := r.URL.Query().Get("workspace")
+		app := r.URL.Query().Get("app")
+		replicas := r.URL.Query().Get("replicas")
+		if workspace == "" || app == "" || replicas == "" {
+			http.Error(w, "workspace, app, replicas are required", http.StatusBadRequest)
+			return
+		}
+		if !strings.HasPrefix(workspace, "ws-") {
+			http.Error(w, "workspace must start with ws-", http.StatusBadRequest)
+			return
+		}
+		if err := scaleApp(workspace, app, replicas); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"status":"scaled"}`))
+	})
+
 	log.Printf("listening on %s", addr)
 	log.Fatal(http.ListenAndServe(addr, nil))
 }
@@ -688,6 +733,55 @@ func deleteApp(workspace, app string) error {
 	serverState.mu.Lock()
 	delete(serverState.endpoints, workspace+"/"+app)
 	serverState.mu.Unlock()
+	return nil
+}
+
+func getAppStatus(workspace, app string) ([]byte, error) {
+	kcfg := filepath.Join("/home/beko/kubeconfigs", workspace+".yaml")
+	podsCmd := exec.Command("kubectl", "--kubeconfig", kcfg, "-n", workspace, "get", "pods", "-l", "app="+app, "-o", "jsonpath={range .items[*]}{.metadata.name}|{.status.phase}{\"\\n\"}{end}")
+	podsOut, podsErr := podsCmd.CombinedOutput()
+	if podsErr != nil {
+		return nil, fmt.Errorf("get app pods failed: %v", podsErr)
+	}
+	svcCmd := exec.Command("kubectl", "--kubeconfig", kcfg, "-n", workspace, "get", "svc", app, "-o", "jsonpath={.spec.ports[0].nodePort}")
+	svcOut, svcErr := svcCmd.CombinedOutput()
+	if svcErr != nil {
+		return nil, fmt.Errorf("get app service failed: %v", svcErr)
+	}
+
+	var pods []map[string]any
+	for _, line := range strings.Split(strings.TrimSpace(string(podsOut)), "\n") {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		parts := strings.Split(line, "|")
+		if len(parts) != 2 {
+			continue
+		}
+		pods = append(pods, map[string]any{
+			"name":  parts[0],
+			"phase": parts[1],
+		})
+	}
+
+	nodePort := strings.TrimSpace(string(svcOut))
+	out := map[string]any{
+		"workspace": workspace,
+		"app":       app,
+		"nodePort":  nodePort,
+		"pods":      pods,
+	}
+	return json.Marshal(out)
+}
+
+func scaleApp(workspace, app, replicas string) error {
+	kcfg := filepath.Join("/home/beko/kubeconfigs", workspace+".yaml")
+	cmd := exec.Command("kubectl", "--kubeconfig", kcfg, "-n", workspace, "scale", "deployment", app, "--replicas", replicas)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("scale deployment: %v", err)
+	}
 	return nil
 }
 
