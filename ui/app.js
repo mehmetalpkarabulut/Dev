@@ -1,6 +1,7 @@
 const healthBadge = document.getElementById("healthBadge");
 const runnerBase = document.getElementById("runnerBase");
 const activityEl = document.getElementById("activity");
+const workspaceListEl = document.getElementById("workspaceList");
 
 function addActivity(entry) {
   const card = document.createElement("div");
@@ -62,6 +63,124 @@ async function healthCheck() {
   } catch (err) {
     healthBadge.textContent = "HEALTH: ERR";
     healthBadge.style.color = "#ff6d6d";
+  }
+}
+
+function setWorkspaceInputs(workspace) {
+  document.getElementById("wsName").value = workspace;
+  document.getElementById("appWs").value = workspace;
+  document.getElementById("epWorkspace").value = workspace;
+}
+
+function setAppInputs(workspace, app) {
+  setWorkspaceInputs(workspace);
+  document.getElementById("appName").value = app;
+  document.getElementById("epApp").value = app;
+  document.getElementById("wsScaleApp").value = app;
+}
+
+function extractAppNames(body) {
+  if (!body || typeof body !== "object") return [];
+  const candidates = [];
+  for (const key of Object.keys(body)) {
+    const val = body[key];
+    if (Array.isArray(val) && val.every((v) => typeof v === "string")) {
+      candidates.push(...val);
+    }
+  }
+  return [...new Set(candidates)];
+}
+
+function renderWorkspaceCard(name, statusBody) {
+  const card = document.createElement("div");
+  card.className = "workspace-card";
+
+  const header = document.createElement("div");
+  header.className = "workspace-head";
+
+  const title = document.createElement("div");
+  title.className = "workspace-title";
+  title.textContent = name;
+
+  const actions = document.createElement("div");
+  actions.className = "workspace-actions";
+
+  const selectBtn = document.createElement("button");
+  selectBtn.className = "btn ghost";
+  selectBtn.textContent = "Select";
+  selectBtn.onclick = () => setWorkspaceInputs(name);
+
+  const statusBtn = document.createElement("button");
+  statusBtn.className = "btn ghost";
+  statusBtn.textContent = "Status";
+  statusBtn.onclick = async () => {
+    await handleRequest("GET", `/workspace/status?workspace=${encodeURIComponent(name)}`);
+  };
+
+  actions.append(selectBtn, statusBtn);
+  header.append(title, actions);
+
+  const summary = document.createElement("div");
+  summary.className = "workspace-summary";
+  summary.textContent = typeof statusBody === "string" ? statusBody : "";
+
+  const apps = extractAppNames(statusBody);
+  const appList = document.createElement("div");
+  appList.className = "app-list";
+  if (apps.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "app-empty";
+    empty.textContent = "Uygulama listesi bulunamadı.";
+    appList.append(empty);
+  } else {
+    apps.forEach((app) => {
+      const chip = document.createElement("button");
+      chip.className = "app-chip";
+      chip.textContent = app;
+      chip.onclick = () => setAppInputs(name, app);
+      appList.append(chip);
+    });
+  }
+
+  const raw = document.createElement("pre");
+  raw.className = "workspace-raw";
+  raw.textContent = stringifyBody(statusBody);
+
+  card.append(header, appList, raw);
+  return card;
+}
+
+async function refreshWorkspaces() {
+  workspaceListEl.innerHTML = "";
+  const res = await api("/workspaces");
+  if (res.status !== 200) {
+    const err = document.createElement("div");
+    err.className = "workspace-empty";
+    err.textContent = `Workspaces alınamadı (status ${res.status})`;
+    workspaceListEl.append(err);
+    addActivity({
+      method: "GET",
+      endpoint: "/workspaces",
+      status: res.status,
+      bodyText: stringifyBody(res.body),
+      timestamp: new Date().toLocaleString()
+    });
+    return;
+  }
+
+  const list = Array.isArray(res.body) ? res.body : res.body?.items || [];
+  if (!list.length) {
+    const empty = document.createElement("div");
+    empty.className = "workspace-empty";
+    empty.textContent = "Workspace bulunamadı.";
+    workspaceListEl.append(empty);
+    return;
+  }
+
+  for (const name of list) {
+    const statusRes = await api(`/workspace/status?workspace=${encodeURIComponent(name)}`);
+    const card = renderWorkspaceCard(name, statusRes.body);
+    workspaceListEl.append(card);
   }
 }
 
@@ -193,4 +312,9 @@ document.getElementById("clearLog").onclick = () => {
   activityEl.innerHTML = "";
 };
 
+document.getElementById("wsRefresh").onclick = () => {
+  refreshWorkspaces();
+};
+
 healthCheck();
+refreshWorkspaces();
