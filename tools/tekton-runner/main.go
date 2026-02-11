@@ -1175,10 +1175,14 @@ spec:
 {{- if eq .SourceType "zip" }}
     - name: zip-url
       value: {{.ZipURL}}
+{{- if .ZipUsername }}
     - name: zip-username
       value: {{.ZipUsername}}
+{{- end }}
+{{- if .ZipPassword }}
     - name: zip-password
       value: {{.ZipPassword}}
+{{- end }}
 {{- end }}
     - name: project
       value: {{.Project}}
