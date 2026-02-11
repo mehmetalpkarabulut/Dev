@@ -54,22 +54,15 @@
           <div class="card-header">
             <div>
               <div class="card-title">Workspaces</div>
-              <div class="card-sub">Durumlar ve uygulamalar</div>
+              <div class="card-sub">Secili workspace ile detail yan yana</div>
             </div>
             <button class="btn ghost" id="wsRefresh">Refresh</button>
           </div>
-          <div class="workspace-grid" id="workspaceList"></div>
-        </section>
-
-        <section class="card wide">
-          <div class="card-header">
-            <div>
-              <div class="card-title">Workspace Detail</div>
-              <div class="card-sub">Secili workspace uzerinden islemleri yapin</div>
+          <div class="split-panel">
+            <div class="workspace-grid" id="workspaceList"></div>
+            <div id="workspaceDetail" class="workspace-detail">
+              <div class="empty-state">Bir workspace secin.</div>
             </div>
-          </div>
-          <div id="workspaceDetail" class="workspace-detail">
-            <div class="empty-state">Bir workspace secin.</div>
           </div>
         </section>
 
