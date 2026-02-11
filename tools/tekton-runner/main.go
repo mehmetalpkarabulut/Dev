@@ -113,6 +113,13 @@ var serverHostIP string
 var serverKubeconfig string
 var serverState = &ServerState{endpoints: map[string]string{}}
 var portStore = &ExternalPortStore{path: "/home/beko/port-map.json"}
+type Forward struct {
+	Port int
+	Cmd  *exec.Cmd
+}
+
+var forwardMu sync.Mutex
+var forwards = map[string]*Forward{}
 
 func main() {
 	inPath := flag.String("in", "", "input JSON file (default: stdin)")
@@ -200,6 +207,12 @@ func main() {
 func runServer(addr, apiKey string) {
 	if err := portStore.load(); err != nil {
 		log.Printf("port map load error: %v", err)
+	}
+	// Start port forwards for existing mappings
+	for _, e := range portStore.list() {
+		if err := ensureForward(e.Workspace, e.App, e.ExternalPort); err != nil {
+			log.Printf("forward start failed for %s/%s: %v", e.Workspace, e.App, err)
+		}
 	}
 
 	http.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
@@ -530,6 +543,11 @@ func runServer(addr, apiKey string) {
 				http.Error(w, "port already in use", http.StatusConflict)
 				return
 			}
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if err := ensureForward(req.Workspace, req.App, req.ExternalPort); err != nil {
+			_ = portStore.remove(req.Workspace, req.App)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -1239,6 +1257,106 @@ func (s *ExternalPortStore) upsert(in ExternalPortEntry) error {
 		return err
 	}
 	return os.Rename(tmp, s.path)
+}
+
+func (s *ExternalPortStore) remove(workspace, app string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]ExternalPortEntry, 0, len(s.entries))
+	for _, e := range s.entries {
+		if e.Workspace == workspace && e.App == app {
+			continue
+		}
+		out = append(out, e)
+	}
+	s.entries = out
+	b, err := json.MarshalIndent(s.entries, "", "  ")
+	if err != nil {
+		return err
+	}
+	tmp := s.path + ".tmp"
+	if err := os.WriteFile(tmp, b, 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, s.path)
+}
+
+func forwardKey(workspace, app string) string {
+	return workspace + "::" + app
+}
+
+func ensureForward(workspace, app string, externalPort int) error {
+	if externalPort <= 0 {
+		return fmt.Errorf("invalid external port")
+	}
+	key := forwardKey(workspace, app)
+
+	forwardMu.Lock()
+	if fwd, ok := forwards[key]; ok && fwd != nil && fwd.Cmd != nil && fwd.Cmd.Process != nil {
+		if fwd.Port == externalPort {
+			forwardMu.Unlock()
+			return nil
+		}
+		_ = fwd.Cmd.Process.Kill()
+		delete(forwards, key)
+	}
+	forwardMu.Unlock()
+
+	kcfg := filepath.Join("/home/beko/kubeconfigs", workspace+".yaml")
+	nodePort, err := getServiceNodePort(kcfg, workspace, app)
+	if err != nil {
+		return err
+	}
+	nodeIP, err := getNodeInternalIP(kcfg, workspace)
+	if err != nil {
+		return err
+	}
+
+	if _, err := exec.LookPath("socat"); err != nil {
+		return fmt.Errorf("socat not found")
+	}
+
+	args := []string{
+		fmt.Sprintf("TCP-LISTEN:%d,bind=0.0.0.0,fork,reuseaddr", externalPort),
+		fmt.Sprintf("TCP:%s:%d", nodeIP, nodePort),
+	}
+	cmd := exec.Command("socat", args...)
+	logPath := fmt.Sprintf("/tmp/socat-%s-%s.log", workspace, app)
+	f, _ := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+	if f != nil {
+		cmd.Stdout = f
+		cmd.Stderr = f
+	}
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("socat start failed: %v", err)
+	}
+	forwardMu.Lock()
+	forwards[key] = &Forward{Port: externalPort, Cmd: cmd}
+	forwardMu.Unlock()
+	return nil
+}
+
+func getNodeInternalIP(kubeconfig, workspace string) (string, error) {
+	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfig, "get", "node", "-o", "jsonpath={.items[0].status.addresses[?(@.type==\"InternalIP\")].address}")
+	out, err := cmd.Output()
+	if err == nil {
+		ip := strings.TrimSpace(string(out))
+		if ip != "" {
+			return ip, nil
+		}
+	}
+	// Fallback to docker inspect on kind node
+	node := workspace + "-control-plane"
+	inspect := exec.Command("docker", "inspect", "-f", "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}", node)
+	insOut, insErr := inspect.Output()
+	if insErr != nil {
+		return "", fmt.Errorf("node ip not found")
+	}
+	ip := strings.TrimSpace(string(insOut))
+	if ip == "" {
+		return "", fmt.Errorf("node ip empty")
+	}
+	return ip, nil
 }
 
 func findUIDir() string {
