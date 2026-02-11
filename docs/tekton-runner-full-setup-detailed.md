@@ -14,17 +14,23 @@ Bu dokuman, sifirdan hic bilginiz yokmus gibi tum adimlari ve gerekli manifestle
 2. Docker kurulumu (Ubuntu)
 3. kubectl kurulumu
 4. kind kurulumu
-5. Harbor kurulumu
-6. Harbor sertifika (SAN) ve registry hazirligi
-7. Tekton kurulumu
-8. Tekton build task ve destek imajlarini Harbor'a yukleme
-9. Tekton Task manifesti (Git/Local/ZIP destekli)
-10. Tekton Runner (Go) kurulumu
-11. Tekton Runner HTTP servisini calistirma
-12. RBAC (opsiyonel)
-13. Postman ve JSON ornekleri
-14. Log / debug komutlari
-15. Sik hata/ceyiz
+5. Harbor kurulumu (indirme ve calistirma)
+6. Harbor ayakta mi? (container kontrolu)
+7. Harbor sertifika (SAN) ve registry hazirligi
+8. Tekton kurulumu
+9. Tekton ayakta mi? (pod kontrolu)
+10. Tekton build task ve destek imajlarini Harbor'a yukleme
+11. Tekton Secret ve ServiceAccount
+12. Tekton Task manifesti (Git/Local/ZIP destekli)
+13. Tekton Runner (Go) kurulumu
+14. Tekton Runner uygulamasi ne ise yarar?
+15. Tekton Runner kaynak kodlari (Go)
+16. Tekton Runner HTTP servisini calistirma
+17. RBAC (opsiyonel)
+18. Postman ve JSON ornekleri
+19. Log / debug komutlari
+20. Sik hata/ceyiz
+21. Servislerin Ozeti
 
 ---
 
@@ -90,9 +96,31 @@ kubectl get nodes
 
 ---
 
-## 5) Harbor Kurulumu
+## 5) Harbor Kurulumu (Indirme ve Calistirma)
 
-Harbor klasoru:
+Harbor dosyalari yoksa indir:
+```bash
+HARBOR_VERSION=2.10.0
+cd /tmp
+wget https://github.com/goharbor/harbor/releases/download/v${HARBOR_VERSION}/harbor-offline-installer-v${HARBOR_VERSION}.tgz
+tar -xzf harbor-offline-installer-v${HARBOR_VERSION}.tgz
+```
+
+`harbor.yml` dosyasini duzenle:
+```bash
+cd /tmp/harbor
+cp harbor.yml.tmpl harbor.yml
+# hostname: lenovo
+# https port: 8443
+```
+
+Kurulum:
+```bash
+cd /tmp/harbor
+sudo ./install.sh
+```
+
+Not: Bu ortamda Harbor klasoru zaten var:
 ```
 /home/beko/harbor/harbor
 ```
@@ -105,7 +133,31 @@ sudo docker compose up -d
 
 ---
 
-## 6) Harbor Sertifika (SAN) ve Registry Hazirligi
+## 6) Harbor Ayakta mi? (Container Kontrolu)
+
+Harbor containerlari ayakta mi:
+```bash
+sudo docker ps --format 'table {{.Names}}\t{{.Status}}' | rg -i 'harbor|nginx|registry|core|portal|jobservice|db|redis'
+```
+
+Beklenen ana containerlar:
+- `nginx`
+- `harbor-core`
+- `harbor-portal`
+- `harbor-db`
+- `harbor-redis`
+- `registry`
+- `harbor-jobservice`
+- `harbor-log` (log servisi kullaniliyorsa)
+
+Bir container `Exited` ise log al:
+```bash
+sudo docker logs <CONTAINER_NAME> --tail 100
+```
+
+---
+
+## 7) Harbor Sertifika (SAN) ve Registry Hazirligi
 
 SAN iceren sertifika olustur:
 ```bash
@@ -134,7 +186,7 @@ sudo curl -sk -u 'admin:Harbor12345' -H 'Content-Type: application/json' \
 
 ---
 
-## 7) Tekton Kurulumu
+## 8) Tekton Kurulumu
 
 ```bash
 kubectl apply -f https://storage.googleapis.com/tekton-releases/pipeline/latest/release.yaml
@@ -154,7 +206,29 @@ kubectl label namespace tekton-pipelines pod-security.kubernetes.io/enforce=base
 
 ---
 
-## 8) Harbor'a Gerekli Image'leri Yukleme
+## 9) Tekton Ayakta mi? (Pod Kontrolu)
+
+Tekton podlarini kontrol et:
+```bash
+kubectl get pods -n tekton-pipelines
+```
+
+Beklenen temel podlar:
+- `tekton-pipelines-controller-*`
+- `tekton-pipelines-webhook-*`
+- `tekton-triggers-controller-*`
+- `tekton-triggers-webhook-*`
+- `tekton-triggers-core-interceptors-*`
+- `tekton-events-controller-*`
+
+Sorun varsa log al:
+```bash
+kubectl logs -n tekton-pipelines <POD_ADI> --tail 200
+```
+
+---
+
+## 10) Harbor'a Gerekli Image'leri Yukleme
 
 Bu sayede Tekton podlari internet olmadan Harbor'dan cekebilir:
 
@@ -180,7 +254,7 @@ sudo docker push lenovo:8443/library/python:3.12-alpine
 
 ---
 
-## 9) Tekton Secret ve ServiceAccount
+## 11) Tekton Secret ve ServiceAccount
 
 Harbor credentials secret:
 
@@ -215,7 +289,7 @@ kubectl apply -f /path/to/build-bot.yaml
 
 ---
 
-## 10) Tekton Task (Git/Local/ZIP)
+## 12) Tekton Task (Git/Local/ZIP)
 
 Dosya:
 ```
@@ -429,7 +503,7 @@ spec:
 
 ---
 
-## 11) Tekton Runner (HTTP API) - Kurulum
+## 13) Tekton Runner (Go) Kurulum
 
 Kod dizini:
 ```
@@ -450,7 +524,33 @@ go build -o tekton-runner ./...
 
 ---
 
-## 12) Tekton Runner HTTP Servisini Calistirma
+## 14) Tekton Runner Uygulamasi Ne Ise Yarar?
+
+`tekton-runner` disaridan gelen HTTP POST isteklerini alir ve buna gore Tekton TaskRun olusturur. Bu sayede webhook kurmadan, baska bir uygulama veya Postman ile kolayca build baslatilir. \n
+Zip modu otomatik calisir: `source.type=zip` geldigi anda Task, zip'i indirir, Dockerfile'i bulur ve kaniko ile image build + Harbor push yapar. HTTP servis sadece TaskRun yaratir, build arka planda Tekton tarafinda calisir.
+
+---
+
+## 15) Tekton Runner Kaynak Kodlari (Go)
+
+Kaynak kodlari:
+```
+/home/beko/tools/tekton-runner
+```
+
+Ana dosyalar:
+- `tools/tekton-runner/main.go` (HTTP sunucu + manifest uretimi)
+- `tools/tekton-runner/README.md` (kullanim ve JSON semasi)
+- `tools/tekton-runner/examples/` (ornek JSONlar)
+
+Istersen kodlari bu repoya da alabilirsin:
+```bash
+cp -r /home/beko/tools/tekton-runner /home/beko/Dev/tools/
+```
+
+---
+
+## 16) Tekton Runner HTTP Servisini Calistirma
 
 ```bash
 ./tekton-runner -server -addr 0.0.0.0:8088
@@ -468,7 +568,7 @@ http://<HOST_IP>:8088/run
 
 ---
 
-## 13) RBAC (Opsiyonel)
+## 17) RBAC (Opsiyonel)
 
 ```bash
 kubectl apply -f /home/beko/manifests/tekton-runner-rbac.yaml
@@ -533,7 +633,7 @@ roleRef:
 
 ---
 
-## 14) Postman / JSON Ornekleri
+## 18) Postman / JSON Ornekleri
 
 ### Git (GitHub/Azure HTTPS)
 
@@ -618,7 +718,7 @@ roleRef:
 
 ---
 
-## 15) Log / Debug Komutlari
+## 19) Log / Debug Komutlari
 
 TaskRun listeleme:
 ```bash
@@ -638,7 +738,7 @@ kubectl logs -n tekton-pipelines pod/<POD_ADI> -c step-build
 
 ---
 
-## 16) Sik Hatalar
+## 20) Sik Hatalar
 
 - `TaskRunResolutionFailed`: Task bulunamiyor. Task manifestini apply et.
 - `Dockerfile not found`: ZIP icinde Dockerfile yok.
@@ -648,9 +748,8 @@ kubectl logs -n tekton-pipelines pod/<POD_ADI> -c step-build
 
 ---
 
-## 17) Servislerin Ozeti
+## 21) Servislerin Ozeti
 
 - Tekton Task: `build-and-push-generic`
 - Tekton Runner API: `http://<HOST_IP>:8088/run`
 - Harbor: `https://lenovo:8443`
-
