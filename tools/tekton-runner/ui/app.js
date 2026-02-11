@@ -6,29 +6,40 @@ const workspaceDetailEl = document.getElementById("workspaceDetail");
 let currentWorkspace = null;
 let currentApp = null;
 let workspacesCache = [];
+let activityCache = [];
+let wsStatusCache = {};
 
 function addActivity(entry) {
-  const card = document.createElement("div");
-  card.className = "activity-card";
+  activityCache.unshift(entry);
+  activityCache = activityCache.slice(0, 20);
+  renderActivity();
+}
 
-  const head = document.createElement("div");
-  head.className = "activity-head";
+function renderActivity() {
+  activityEl.innerHTML = "";
+  activityCache.forEach((entry) => {
+    const card = document.createElement("div");
+    card.className = "activity-card";
 
-  const left = document.createElement("div");
-  left.textContent = `${entry.method} ${entry.endpoint}`;
+    const head = document.createElement("div");
+    head.className = "activity-head";
 
-  const tag = document.createElement("div");
-  tag.className = `tag ${entry.status >= 200 && entry.status < 300 ? "ok" : entry.status >= 400 && entry.status < 500 ? "warn" : "err"}`;
-  tag.textContent = entry.status;
+    const left = document.createElement("div");
+    left.textContent = `${entry.method} ${entry.endpoint}`;
 
-  head.append(left, tag);
+    const tag = document.createElement("div");
+    tag.className = `tag ${entry.status >= 200 && entry.status < 300 ? "ok" : entry.status >= 400 && entry.status < 500 ? "warn" : "err"}`;
+    tag.textContent = entry.status;
 
-  const msg = document.createElement("div");
-  msg.className = "activity-msg";
-  msg.textContent = entry.message;
+    head.append(left, tag);
 
-  card.append(head, msg);
-  activityEl.prepend(card);
+    const msg = document.createElement("div");
+    msg.className = "activity-msg";
+    msg.textContent = entry.message;
+
+    card.append(head, msg);
+    activityEl.append(card);
+  });
 }
 
 async function api(path, options = {}) {
@@ -150,6 +161,17 @@ async function refreshWorkspaces() {
   workspacesCache.forEach((entry) => {
     workspaceListEl.append(renderWorkspaceCard(entry));
   });
+
+  await refreshWorkspaceStatus(currentWorkspace);
+}
+
+async function refreshWorkspaceStatus(ws) {
+  if (!ws || !ws.startsWith("ws-")) return;
+  const res = await api(`/workspace/status?workspace=${encodeURIComponent(ws)}`);
+  if (res.status === 200) {
+    wsStatusCache[ws] = res.body;
+    renderWorkspaceDetail();
+  }
 }
 
 function renderWorkspaceDetail() {
@@ -164,6 +186,7 @@ function renderWorkspaceDetail() {
 
   const entry = workspacesCache.find((w) => w.workspace === currentWorkspace) || { workspace: currentWorkspace, apps: [] };
   const apps = Array.isArray(entry.apps) ? entry.apps : [];
+  const status = wsStatusCache[currentWorkspace] || {};
 
   const info = document.createElement("div");
   info.className = "detail-grid";
@@ -185,8 +208,7 @@ function renderWorkspaceDetail() {
   statusBtn.className = "btn ghost";
   statusBtn.textContent = "Refresh Status";
   statusBtn.onclick = async () => {
-    if (!currentWorkspace.startsWith("ws-")) return;
-    await handleRequest("GET", `/workspace/status?workspace=${encodeURIComponent(currentWorkspace)}`);
+    await refreshWorkspaceStatus(currentWorkspace);
   };
 
   const restartBtn = document.createElement("button");
@@ -215,7 +237,11 @@ function renderWorkspaceDetail() {
     const name = app.app || app.name || "app";
     const card = document.createElement("div");
     card.className = "detail-card";
-    card.innerHTML = `<div class="detail-label">App</div><div class="detail-value">${name}</div>`;
+
+    const replica = status?.apps?.find?.((a) => a.app === name)?.replicas;
+    const replicaText = replica !== undefined ? replica : "?";
+
+    card.innerHTML = `<div class="detail-label">App</div><div class="detail-value">${name}</div><div class="detail-label">Replicas</div><div class="detail-value">${replicaText}</div>`;
 
     const btns = document.createElement("div");
     btns.className = "detail-actions";
@@ -261,13 +287,14 @@ function renderWorkspaceDetail() {
     const scaleInput = document.createElement("input");
     scaleInput.type = "number";
     scaleInput.min = "1";
-    scaleInput.value = "1";
+    scaleInput.value = replicaText === "?" ? "1" : replicaText;
     scaleInput.className = "scale-input";
     const scaleBtn = document.createElement("button");
     scaleBtn.className = "btn ghost";
     scaleBtn.textContent = "Scale";
     scaleBtn.onclick = async () => {
       await handleRequest("POST", `/workspace/scale?workspace=${encodeURIComponent(currentWorkspace)}&app=${encodeURIComponent(name)}&replicas=${encodeURIComponent(scaleInput.value)}`, { method: "POST" });
+      await refreshWorkspaceStatus(currentWorkspace);
     };
     scaleWrap.append(scaleInput, scaleBtn);
 
@@ -404,7 +431,8 @@ document.getElementById("runBtn").onclick = async () => {
 document.getElementById("wsRefresh").onclick = () => refreshWorkspaces();
 
 document.getElementById("clearLog").onclick = () => {
-  activityEl.innerHTML = "";
+  activityCache = [];
+  renderActivity();
 };
 
 healthCheck();
