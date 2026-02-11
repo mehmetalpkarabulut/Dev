@@ -328,6 +328,49 @@ func runServer(addr, apiKey string) {
 		w.Write([]byte(`{"status":"deleted"}`))
 	})
 
+	http.HandleFunc("/workspace/status", func(w http.ResponseWriter, r *http.Request) {
+		workspace := r.URL.Query().Get("workspace")
+		if workspace == "" {
+			http.Error(w, "workspace is required", http.StatusBadRequest)
+			return
+		}
+		if !strings.HasPrefix(workspace, "ws-") {
+			http.Error(w, "workspace must start with ws-", http.StatusBadRequest)
+			return
+		}
+		info, err := getWorkspaceStatus(workspace)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(info)
+	})
+
+	http.HandleFunc("/app/delete", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		workspace := r.URL.Query().Get("workspace")
+		app := r.URL.Query().Get("app")
+		if workspace == "" || app == "" {
+			http.Error(w, "workspace and app are required", http.StatusBadRequest)
+			return
+		}
+		if !strings.HasPrefix(workspace, "ws-") {
+			http.Error(w, "workspace must start with ws-", http.StatusBadRequest)
+			return
+		}
+		if err := deleteApp(workspace, app); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"status":"deleted"}`))
+	})
+
 	log.Printf("listening on %s", addr)
 	log.Fatal(http.ListenAndServe(addr, nil))
 }
@@ -625,6 +668,82 @@ func deleteWorkspace(name string) error {
 	}
 	serverState.mu.Unlock()
 	return nil
+}
+
+func deleteApp(workspace, app string) error {
+	kcfg := filepath.Join("/home/beko/kubeconfigs", workspace+".yaml")
+	cmd := exec.Command("kubectl", "--kubeconfig", kcfg, "-n", workspace, "delete", "deployment", app)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("delete deployment: %v", err)
+	}
+	cmd = exec.Command("kubectl", "--kubeconfig", kcfg, "-n", workspace, "delete", "service", app)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("delete service: %v", err)
+	}
+
+	serverState.mu.Lock()
+	delete(serverState.endpoints, workspace+"/"+app)
+	serverState.mu.Unlock()
+	return nil
+}
+
+func getWorkspaceStatus(workspace string) ([]byte, error) {
+	kcfg := filepath.Join("/home/beko/kubeconfigs", workspace+".yaml")
+	podsCmd := exec.Command("kubectl", "--kubeconfig", kcfg, "-n", workspace, "get", "pods", "-o", "jsonpath={range .items[*]}{.metadata.name}|{.status.phase}{\"\\n\"}{end}")
+	podsOut, podsErr := podsCmd.CombinedOutput()
+	if podsErr != nil {
+		return nil, fmt.Errorf("get pods failed: %v", podsErr)
+	}
+
+	servicesCmd := exec.Command("kubectl", "--kubeconfig", kcfg, "-n", workspace, "get", "svc", "-o", `jsonpath={range .items[*]}{.metadata.name}|{.spec.ports[0].nodePort}{"\n"}{end}`)
+	svcOut, svcErr := servicesCmd.CombinedOutput()
+	if svcErr != nil {
+		return nil, fmt.Errorf("get services failed: %v", svcErr)
+	}
+
+	var pods []map[string]any
+	for _, line := range strings.Split(strings.TrimSpace(string(podsOut)), "\n") {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		parts := strings.Split(line, "|")
+		if len(parts) != 2 {
+			continue
+		}
+		pods = append(pods, map[string]any{
+			"name":  parts[0],
+			"phase": parts[1],
+		})
+	}
+
+	var svcs []map[string]any
+	for _, line := range strings.Split(strings.TrimSpace(string(svcOut)), "\n") {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		parts := strings.Split(line, "|")
+		if len(parts) != 2 {
+			continue
+		}
+		portStr := parts[1]
+		var port int
+		fmt.Sscanf(portStr, "%d", &port)
+		svcs = append(svcs, map[string]any{
+			"name":     parts[0],
+			"nodePort": port,
+		})
+	}
+
+	out := map[string]any{
+		"workspace": workspace,
+		"pods":      pods,
+		"services":  svcs,
+	}
+	return json.Marshal(out)
 }
 
 func setDefaults(in *Input) {

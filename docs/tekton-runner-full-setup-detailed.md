@@ -584,6 +584,16 @@ Workspace silme:
 http://<HOST_IP>:8088/workspace/delete?workspace=ws-<name>
 ```
 
+Workspace durumu:
+```
+http://<HOST_IP>:8088/workspace/status?workspace=ws-<name>
+```
+
+Tek uygulama silme:
+```
+http://<HOST_IP>:8088/app/delete?workspace=ws-<name>&app=<app>
+```
+
 ---
 
 ## 17) RBAC (Opsiyonel)
