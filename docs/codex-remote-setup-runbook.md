@@ -151,7 +151,7 @@ cd tools/tekton-runner
 sudo apt-get install -y golang-go
 
 go build -o tekton-runner ./...
-./tekton-runner -server -addr 0.0.0.0:8088 -host-ip <HOST_IP>
+./tekton-runner -server -addr 0.0.0.0:8088 -host-ip <HOST_IP> -kubeconfig /tmp/kind-tekton.kubeconfig
 ```
 
 Health check:

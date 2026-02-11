@@ -98,6 +98,7 @@ type ServerState struct {
 }
 
 var serverHostIP string
+var serverKubeconfig string
 var serverState = &ServerState{endpoints: map[string]string{}}
 
 func main() {
@@ -108,10 +109,12 @@ func main() {
 	addr := flag.String("addr", ":8088", "server listen address")
 	apiKey := flag.String("api-key", "", "optional API key for server auth (Bearer)")
 	hostIP := flag.String("host-ip", "", "host IP for endpoint generation (optional)")
+	kubeconfig := flag.String("kubeconfig", "", "kubeconfig for kubectl (optional)")
 	flag.Parse()
 
 	if *server {
 		serverHostIP = *hostIP
+		serverKubeconfig = *kubeconfig
 		runServer(*addr, *apiKey)
 		return
 	}
@@ -500,7 +503,7 @@ func isTaskRun(m string) bool {
 }
 
 func kubectlApply(m string) error {
-	cmd := exec.Command("kubectl", "apply", "-f", "-")
+	cmd := kubectlCmd("apply", "-f", "-")
 	cmd.Stdin = strings.NewReader(m)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -508,7 +511,7 @@ func kubectlApply(m string) error {
 }
 
 func kubectlCreateName(m, ns string) (string, error) {
-	cmd := exec.Command("kubectl", "-n", ns, "create", "-f", "-", "-o", "name")
+	cmd := kubectlCmd("-n", ns, "create", "-f", "-", "-o", "name")
 	cmd.Stdin = strings.NewReader(m)
 	var out bytes.Buffer
 	cmd.Stdout = &out
@@ -521,6 +524,14 @@ func kubectlCreateName(m, ns string) (string, error) {
 		return "", fmt.Errorf("unexpected create output: %s", out.String())
 	}
 	return parts[1], nil
+}
+
+func kubectlCmd(args ...string) *exec.Cmd {
+	cmd := exec.Command("kubectl", args...)
+	if serverKubeconfig != "" {
+		cmd.Env = append(os.Environ(), "KUBECONFIG="+serverKubeconfig)
+	}
+	return cmd
 }
 
 func handleZipDeploy(in Input, taskRunName string) error {
@@ -566,14 +577,14 @@ func handleZipDeploy(in Input, taskRunName string) error {
 func waitForTaskRun(ns, name string, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		cmd := exec.Command("kubectl", "-n", ns, "get", "taskrun", name, "-o", "jsonpath={.status.conditions[0].status}")
+		cmd := kubectlCmd("-n", ns, "get", "taskrun", name, "-o", "jsonpath={.status.conditions[0].status}")
 		out, _ := cmd.CombinedOutput()
 		status := strings.TrimSpace(string(out))
 		if status == "True" {
 			return nil
 		}
 		if status == "False" {
-			cmd = exec.Command("kubectl", "-n", ns, "get", "taskrun", name, "-o", "jsonpath={.status.conditions[0].message}")
+			cmd = kubectlCmd("-n", ns, "get", "taskrun", name, "-o", "jsonpath={.status.conditions[0].message}")
 			msg, _ := cmd.CombinedOutput()
 			return fmt.Errorf("taskrun failed: %s", strings.TrimSpace(string(msg)))
 		}
@@ -597,12 +608,44 @@ func ensureKindCluster(name, kubeconfigPath string) error {
 		}
 	}
 
+	if err := configureKindNode(name); err != nil {
+		return err
+	}
+
 	cmd = exec.Command("kind", "get", "kubeconfig", "--name", name)
 	out, err = cmd.Output()
 	if err != nil {
 		return fmt.Errorf("kind get kubeconfig: %v", err)
 	}
 	return os.WriteFile(kubeconfigPath, out, 0o600)
+}
+
+func configureKindNode(clusterName string) error {
+	node := clusterName + "-control-plane"
+	// Ensure host mapping for Harbor
+	cmd := exec.Command("docker", "exec", node, "sh", "-c", "grep -q ' lenovo' /etc/hosts || echo '172.18.0.1 lenovo' >> /etc/hosts")
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("configure hosts: %v", err)
+	}
+
+	// Configure containerd to trust Harbor (skip TLS verify for test)
+	hostsToml := "server = \"https://lenovo:8443\"\n[host.\"https://lenovo:8443\"]\n  capabilities = [\"pull\", \"resolve\"]\n  skip_verify = true\n"
+	cmd = exec.Command("docker", "exec", node, "sh", "-c", "mkdir -p /etc/containerd/certs.d/lenovo:8443")
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("mkdir certs.d: %v", err)
+	}
+	cmd = exec.Command("docker", "exec", node, "sh", "-c", "cat > /etc/containerd/certs.d/lenovo:8443/hosts.toml")
+	cmd.Stdin = strings.NewReader(hostsToml)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("write hosts.toml: %v", err)
+	}
+	return nil
 }
 
 func applyDeployment(kubeconfig, namespace, app, image string, port int) error {

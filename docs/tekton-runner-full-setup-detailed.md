@@ -556,7 +556,7 @@ cp -r /home/beko/tools/tekton-runner /home/beko/Dev/tools/
 ## 16) Tekton Runner HTTP Servisini Calistirma
 
 ```bash
-./tekton-runner -server -addr 0.0.0.0:8088 -host-ip <HOST_IP>
+./tekton-runner -server -addr 0.0.0.0:8088 -host-ip <HOST_IP> -kubeconfig /tmp/kind-tekton.kubeconfig
 ```
 
 Health check:
