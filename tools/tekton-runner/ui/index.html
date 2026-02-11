@@ -23,13 +23,13 @@
         <div>
           <div class="kicker">Tekton Runner</div>
           <div class="title">Build & Deploy Console</div>
-          <div class="subtitle">Orkestrasyon ve deploy kontrol paneli</div>
+          <div class="subtitle">Workspace odakli kontrol paneli</div>
         </div>
       </div>
       <div class="statusbar">
         <div class="pill" id="healthBadge">HEALTH: ?</div>
         <button class="btn accent" id="healthBtn">Health Check</button>
-        <div class="meta">Runner: <span id="runnerBase">/api → RUNNER_BASE_URL</span></div>
+        <div class="meta">Runner: <span id="runnerBase">Same origin</span></div>
       </div>
     </header>
 
@@ -40,12 +40,6 @@
           <button class="btn ghost" id="sampleGit">Git Sample</button>
           <button class="btn ghost" id="sampleZip">ZIP Sample</button>
           <button class="btn ghost" id="sampleLocal">Local Sample</button>
-        </div>
-        <div class="side-card">
-          <div class="section-title">Guidance</div>
-          <div class="tip">`/run` 202 dönerse TaskRun oluşur.</div>
-          <div class="tip">`/endpoint` ile erişim URL’si gelir.</div>
-          <div class="tip">`/workspace/*` ile cluster yönetimi yapılır.</div>
         </div>
         <div class="side-card">
           <div class="section-title">Shortcuts</div>
@@ -70,61 +64,88 @@
         <section class="card wide">
           <div class="card-header">
             <div>
-              <div class="card-title">/run — Build & Push</div>
-              <div class="card-sub">JSON payload ile TaskRun tetikleyin</div>
+              <div class="card-title">Workspace Detail</div>
+              <div class="card-sub">Secili workspace uzerinden islemleri yapin</div>
             </div>
-            <button class="btn accent" id="runBtn">POST /run</button>
           </div>
-          <textarea id="runBody" spellcheck="false"></textarea>
-        </section>
-
-        <section class="card">
-          <div class="card-title">/endpoint</div>
-          <div class="row">
-            <input id="epWorkspace" placeholder="workspace" />
-            <input id="epApp" placeholder="app" />
-          </div>
-          <button class="btn ghost" id="epBtn">GET /endpoint</button>
-        </section>
-
-        <section class="card">
-          <div class="card-title">Workspace</div>
-          <div class="row">
-            <input id="wsName" placeholder="workspace" />
-          </div>
-          <div class="row">
-            <button class="btn ghost" id="wsList">GET /workspaces</button>
-            <button class="btn ghost" id="wsStatus">GET /workspace/status</button>
-          </div>
-          <div class="row">
-            <button class="btn danger" id="wsDelete">POST /workspace/delete</button>
-            <button class="btn ghost" id="wsRestart">POST /workspace/restart</button>
-          </div>
-          <div class="row">
-            <input id="wsScaleApp" placeholder="app" />
-            <input id="wsScaleRep" type="number" min="1" value="1" />
-            <button class="btn ghost" id="wsScale">POST /workspace/scale</button>
-          </div>
-        </section>
-
-        <section class="card">
-          <div class="card-title">App</div>
-          <div class="row">
-            <input id="appWs" placeholder="workspace" />
-            <input id="appName" placeholder="app" />
-          </div>
-          <div class="row">
-            <button class="btn ghost" id="appStatus">GET /app/status</button>
-            <button class="btn ghost" id="appRestart">POST /app/restart</button>
-            <button class="btn danger" id="appDelete">POST /app/delete</button>
+          <div id="workspaceDetail" class="workspace-detail">
+            <div class="empty-state">Bir workspace secin.</div>
           </div>
         </section>
 
         <section class="card wide">
           <div class="card-header">
             <div>
-              <div class="card-title">Activity Stream</div>
-              <div class="card-sub">En son isteklerin özeti</div>
+              <div class="card-title">Yeni Build & Push</div>
+              <div class="card-sub">Form ile TaskRun tetikleyin</div>
+            </div>
+            <button class="btn accent" id="runBtn">Create TaskRun</button>
+          </div>
+          <div class="form-grid">
+            <div class="form-field">
+              <label>App Name</label>
+              <input id="formAppName" placeholder="demoapp" />
+            </div>
+            <div class="form-field">
+              <label>Workspace</label>
+              <input id="formWorkspace" placeholder="ws-demo" />
+            </div>
+            <div class="form-field">
+              <label>Source Type</label>
+              <select id="formSourceType">
+                <option value="git">git</option>
+                <option value="zip">zip</option>
+                <option value="local">local</option>
+              </select>
+            </div>
+            <div class="form-field">
+              <label>Repo URL</label>
+              <input id="formRepoUrl" placeholder="https://github.com/org/repo" />
+            </div>
+            <div class="form-field">
+              <label>Revision</label>
+              <input id="formRevision" placeholder="main" />
+            </div>
+            <div class="form-field">
+              <label>Git Username</label>
+              <input id="formGitUser" placeholder="optional" />
+            </div>
+            <div class="form-field">
+              <label>Git Token</label>
+              <input id="formGitToken" placeholder="optional" />
+            </div>
+            <div class="form-field">
+              <label>Zip URL</label>
+              <input id="formZipUrl" placeholder="http://.../app.zip" />
+            </div>
+            <div class="form-field">
+              <label>Local Path</label>
+              <input id="formLocalPath" placeholder="/mnt/projects/app" />
+            </div>
+            <div class="form-field">
+              <label>Image Project</label>
+              <input id="formImageProject" placeholder="demoapp" />
+            </div>
+            <div class="form-field">
+              <label>Image Tag</label>
+              <input id="formImageTag" placeholder="latest" />
+            </div>
+            <div class="form-field">
+              <label>Registry</label>
+              <input id="formRegistry" placeholder="lenovo:8443" />
+            </div>
+            <div class="form-field">
+              <label>Container Port</label>
+              <input id="formPort" type="number" min="1" value="3000" />
+            </div>
+          </div>
+        </section>
+
+        <section class="card wide">
+          <div class="card-header">
+            <div>
+              <div class="card-title">Activity</div>
+              <div class="card-sub">Son islemler</div>
             </div>
             <button class="btn ghost" id="clearLog">Clear</button>
           </div>

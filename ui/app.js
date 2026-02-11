@@ -1,7 +1,11 @@
 const healthBadge = document.getElementById("healthBadge");
-const runnerBase = document.getElementById("runnerBase");
 const activityEl = document.getElementById("activity");
 const workspaceListEl = document.getElementById("workspaceList");
+const workspaceDetailEl = document.getElementById("workspaceDetail");
+
+let currentWorkspace = null;
+let currentApp = null;
+let workspacesCache = [];
 
 function addActivity(entry) {
   const card = document.createElement("div");
@@ -19,15 +23,11 @@ function addActivity(entry) {
 
   head.append(left, tag);
 
-  const meta = document.createElement("div");
-  meta.className = "activity-head";
-  meta.textContent = entry.timestamp;
+  const msg = document.createElement("div");
+  msg.className = "activity-msg";
+  msg.textContent = entry.message;
 
-  const body = document.createElement("pre");
-  body.className = "activity-code";
-  body.textContent = entry.bodyText;
-
-  card.append(head, meta, body);
+  card.append(head, msg);
   activityEl.prepend(card);
 }
 
@@ -38,9 +38,12 @@ async function api(path, options = {}) {
   return { status: res.status, body };
 }
 
-function stringifyBody(body) {
+function toMessage(body) {
   if (typeof body === "string") return body;
-  return JSON.stringify(body, null, 2);
+  if (!body) return "";
+  if (body.message) return body.message;
+  if (body.status) return body.status;
+  return "OK";
 }
 
 async function handleRequest(method, endpoint, options) {
@@ -49,8 +52,7 @@ async function handleRequest(method, endpoint, options) {
     method,
     endpoint,
     status: res.status,
-    bodyText: stringifyBody(res.body),
-    timestamp: new Date().toLocaleString()
+    message: toMessage(res.body)
   });
   return res;
 }
@@ -66,20 +68,18 @@ async function healthCheck() {
   }
 }
 
-function setWorkspaceInputs(workspace) {
-  document.getElementById("wsName").value = workspace;
-  document.getElementById("appWs").value = workspace;
-  document.getElementById("epWorkspace").value = workspace;
+function setCurrentWorkspace(ws) {
+  currentWorkspace = ws;
+  currentApp = null;
+  renderWorkspaceDetail();
 }
 
-function setAppInputs(workspace, app) {
-  setWorkspaceInputs(workspace);
-  document.getElementById("appName").value = app;
-  document.getElementById("epApp").value = app;
-  document.getElementById("wsScaleApp").value = app;
+function setCurrentApp(app) {
+  currentApp = app;
+  renderWorkspaceDetail();
 }
 
-function renderWorkspaceCard(entry, statusBody) {
+function renderWorkspaceCard(entry) {
   const card = document.createElement("div");
   card.className = "workspace-card";
 
@@ -93,29 +93,12 @@ function renderWorkspaceCard(entry, statusBody) {
   const actions = document.createElement("div");
   actions.className = "workspace-actions";
 
-  const selectBtn = document.createElement("button");
-  selectBtn.className = "btn ghost";
-  selectBtn.textContent = "Select";
-  selectBtn.onclick = () => setWorkspaceInputs(entry.workspace);
+  const openBtn = document.createElement("button");
+  openBtn.className = "btn ghost";
+  openBtn.textContent = "Open";
+  openBtn.onclick = () => setCurrentWorkspace(entry.workspace);
 
-  const statusBtn = document.createElement("button");
-  statusBtn.className = "btn ghost";
-  statusBtn.textContent = "Status";
-  statusBtn.onclick = async () => {
-    if (!entry.workspace || !entry.workspace.startsWith("ws-")) {
-      addActivity({
-        method: "GET",
-        endpoint: "/workspace/status",
-        status: 400,
-        bodyText: "workspace must start with ws-",
-        timestamp: new Date().toLocaleString()
-      });
-      return;
-    }
-    await handleRequest("GET", `/workspace/status?workspace=${encodeURIComponent(entry.workspace)}`);
-  };
-
-  actions.append(selectBtn, statusBtn);
+  actions.append(openBtn);
   header.append(title, actions);
 
   const apps = Array.isArray(entry.apps) ? entry.apps : [];
@@ -124,23 +107,22 @@ function renderWorkspaceCard(entry, statusBody) {
   if (apps.length === 0) {
     const empty = document.createElement("div");
     empty.className = "app-empty";
-    empty.textContent = "Uygulama listesi bulunamadı.";
+    empty.textContent = "Uygulama bulunamadi";
     appList.append(empty);
   } else {
     apps.forEach((app) => {
       const chip = document.createElement("button");
       chip.className = "app-chip";
       chip.textContent = app.app || app.name || "app";
-      chip.onclick = () => setAppInputs(entry.workspace, app.app || app.name || "app");
+      chip.onclick = () => {
+        setCurrentWorkspace(entry.workspace);
+        setCurrentApp(app.app || app.name || "app");
+      };
       appList.append(chip);
     });
   }
 
-  const raw = document.createElement("pre");
-  raw.className = "workspace-raw";
-  raw.textContent = stringifyBody(statusBody || entry);
-
-  card.append(header, appList, raw);
+  card.append(header, appList);
   return card;
 }
 
@@ -150,37 +132,208 @@ async function refreshWorkspaces() {
   if (res.status !== 200) {
     const err = document.createElement("div");
     err.className = "workspace-empty";
-    err.textContent = `Workspaces alınamadı (status ${res.status})`;
+    err.textContent = `Workspaces alinmadi (status ${res.status})`;
     workspaceListEl.append(err);
-    addActivity({
-      method: "GET",
-      endpoint: "/workspaces",
-      status: res.status,
-      bodyText: stringifyBody(res.body),
-      timestamp: new Date().toLocaleString()
-    });
+    addActivity({ method: "GET", endpoint: "/workspaces", status: res.status, message: toMessage(res.body) });
     return;
   }
 
-  const list = Array.isArray(res.body) ? res.body : res.body?.items || [];
-  if (!list.length) {
+  workspacesCache = Array.isArray(res.body) ? res.body : res.body?.items || [];
+  if (!workspacesCache.length) {
     const empty = document.createElement("div");
     empty.className = "workspace-empty";
-    empty.textContent = "Workspace bulunamadı.";
+    empty.textContent = "Workspace bulunamadi.";
     workspaceListEl.append(empty);
     return;
   }
 
-  for (const entry of list) {
-    if (!entry.workspace) continue;
-    let statusBody = null;
-    if (entry.workspace.startsWith("ws-")) {
-      const statusRes = await api(`/workspace/status?workspace=${encodeURIComponent(entry.workspace)}`);
-      statusBody = statusRes.body;
-    }
-    const card = renderWorkspaceCard(entry, statusBody);
-    workspaceListEl.append(card);
+  workspacesCache.forEach((entry) => {
+    workspaceListEl.append(renderWorkspaceCard(entry));
+  });
+}
+
+function renderWorkspaceDetail() {
+  workspaceDetailEl.innerHTML = "";
+  if (!currentWorkspace) {
+    const empty = document.createElement("div");
+    empty.className = "empty-state";
+    empty.textContent = "Bir workspace secin.";
+    workspaceDetailEl.append(empty);
+    return;
   }
+
+  const entry = workspacesCache.find((w) => w.workspace === currentWorkspace) || { workspace: currentWorkspace, apps: [] };
+  const apps = Array.isArray(entry.apps) ? entry.apps : [];
+
+  const info = document.createElement("div");
+  info.className = "detail-grid";
+
+  const nameCard = document.createElement("div");
+  nameCard.className = "detail-card";
+  nameCard.innerHTML = `<div class="detail-label">Workspace</div><div class="detail-value">${currentWorkspace}</div>`;
+
+  const appCount = document.createElement("div");
+  appCount.className = "detail-card";
+  appCount.innerHTML = `<div class="detail-label">Apps</div><div class="detail-value">${apps.length}</div>`;
+
+  info.append(nameCard, appCount);
+
+  const actions = document.createElement("div");
+  actions.className = "detail-actions";
+
+  const statusBtn = document.createElement("button");
+  statusBtn.className = "btn ghost";
+  statusBtn.textContent = "Refresh Status";
+  statusBtn.onclick = async () => {
+    if (!currentWorkspace.startsWith("ws-")) return;
+    await handleRequest("GET", `/workspace/status?workspace=${encodeURIComponent(currentWorkspace)}`);
+  };
+
+  const restartBtn = document.createElement("button");
+  restartBtn.className = "btn ghost";
+  restartBtn.textContent = "Restart Workspace";
+  restartBtn.onclick = async () => {
+    await handleRequest("POST", `/workspace/restart?workspace=${encodeURIComponent(currentWorkspace)}`, { method: "POST" });
+  };
+
+  const deleteBtn = document.createElement("button");
+  deleteBtn.className = "btn danger";
+  deleteBtn.textContent = "Delete Workspace";
+  deleteBtn.onclick = async () => {
+    await handleRequest("POST", `/workspace/delete?workspace=${encodeURIComponent(currentWorkspace)}`, { method: "POST" });
+    await refreshWorkspaces();
+    currentWorkspace = null;
+    renderWorkspaceDetail();
+  };
+
+  actions.append(statusBtn, restartBtn, deleteBtn);
+
+  const appSection = document.createElement("div");
+  appSection.className = "detail-grid";
+
+  apps.forEach((app) => {
+    const name = app.app || app.name || "app";
+    const card = document.createElement("div");
+    card.className = "detail-card";
+    card.innerHTML = `<div class="detail-label">App</div><div class="detail-value">${name}</div>`;
+
+    const btns = document.createElement("div");
+    btns.className = "detail-actions";
+
+    const endpointBtn = document.createElement("button");
+    endpointBtn.className = "btn ghost";
+    endpointBtn.textContent = "Endpoint";
+    endpointBtn.onclick = async () => {
+      const res = await handleRequest("GET", `/endpoint?workspace=${encodeURIComponent(currentWorkspace)}&app=${encodeURIComponent(name)}`);
+      if (res.status === 200 && res.body?.endpoint) {
+        const link = document.createElement("div");
+        link.className = "detail-value";
+        link.textContent = res.body.endpoint;
+        card.append(link);
+      }
+    };
+
+    const statusAppBtn = document.createElement("button");
+    statusAppBtn.className = "btn ghost";
+    statusAppBtn.textContent = "Status";
+    statusAppBtn.onclick = async () => {
+      await handleRequest("GET", `/app/status?workspace=${encodeURIComponent(currentWorkspace)}&app=${encodeURIComponent(name)}`);
+    };
+
+    const restartAppBtn = document.createElement("button");
+    restartAppBtn.className = "btn ghost";
+    restartAppBtn.textContent = "Restart";
+    restartAppBtn.onclick = async () => {
+      await handleRequest("POST", `/app/restart?workspace=${encodeURIComponent(currentWorkspace)}&app=${encodeURIComponent(name)}`, { method: "POST" });
+    };
+
+    const deleteAppBtn = document.createElement("button");
+    deleteAppBtn.className = "btn danger";
+    deleteAppBtn.textContent = "Delete";
+    deleteAppBtn.onclick = async () => {
+      await handleRequest("POST", `/app/delete?workspace=${encodeURIComponent(currentWorkspace)}&app=${encodeURIComponent(name)}`, { method: "POST" });
+      await refreshWorkspaces();
+      renderWorkspaceDetail();
+    };
+
+    const scaleWrap = document.createElement("div");
+    scaleWrap.className = "detail-actions";
+    const scaleInput = document.createElement("input");
+    scaleInput.type = "number";
+    scaleInput.min = "1";
+    scaleInput.value = "1";
+    scaleInput.className = "scale-input";
+    const scaleBtn = document.createElement("button");
+    scaleBtn.className = "btn ghost";
+    scaleBtn.textContent = "Scale";
+    scaleBtn.onclick = async () => {
+      await handleRequest("POST", `/workspace/scale?workspace=${encodeURIComponent(currentWorkspace)}&app=${encodeURIComponent(name)}&replicas=${encodeURIComponent(scaleInput.value)}`, { method: "POST" });
+    };
+    scaleWrap.append(scaleInput, scaleBtn);
+
+    btns.append(endpointBtn, statusAppBtn, restartAppBtn, deleteAppBtn);
+
+    card.append(btns, scaleWrap);
+    appSection.append(card);
+  });
+
+  workspaceDetailEl.append(info, actions, appSection);
+}
+
+function buildRunPayload() {
+  const appName = document.getElementById("formAppName").value.trim();
+  const workspace = document.getElementById("formWorkspace").value.trim();
+  const sourceType = document.getElementById("formSourceType").value;
+  const repoUrl = document.getElementById("formRepoUrl").value.trim();
+  const revision = document.getElementById("formRevision").value.trim();
+  const gitUser = document.getElementById("formGitUser").value.trim();
+  const gitToken = document.getElementById("formGitToken").value.trim();
+  const zipUrl = document.getElementById("formZipUrl").value.trim();
+  const localPath = document.getElementById("formLocalPath").value.trim();
+  const project = document.getElementById("formImageProject").value.trim();
+  const tag = document.getElementById("formImageTag").value.trim();
+  const registry = document.getElementById("formRegistry").value.trim();
+  const port = parseInt(document.getElementById("formPort").value, 10) || 3000;
+
+  const source = { type: sourceType };
+  if (sourceType === "git") {
+    source.repo_url = repoUrl;
+    source.revision = revision || "main";
+    if (gitUser) source.git_username = gitUser;
+    if (gitToken) source.git_token = gitToken;
+  }
+  if (sourceType === "zip") {
+    source.zip_url = zipUrl;
+  }
+  if (sourceType === "local") {
+    source.local_path = localPath;
+  }
+
+  return {
+    app_name: appName,
+    workspace: workspace,
+    source,
+    image: {
+      project: project || appName,
+      tag: tag || "latest",
+      registry: registry || "lenovo:8443"
+    },
+    deploy: { container_port: port }
+  };
+}
+
+function fillForm(sample) {
+  document.getElementById("formAppName").value = sample.app_name;
+  document.getElementById("formWorkspace").value = sample.workspace;
+  document.getElementById("formSourceType").value = sample.source.type;
+  document.getElementById("formRepoUrl").value = sample.source.repo_url || "";
+  document.getElementById("formRevision").value = sample.source.revision || "";
+  document.getElementById("formZipUrl").value = sample.source.zip_url || "";
+  document.getElementById("formLocalPath").value = sample.source.local_path || "";
+  document.getElementById("formImageProject").value = sample.image.project;
+  document.getElementById("formImageTag").value = sample.image.tag;
+  document.getElementById("formRegistry").value = sample.image.registry;
+  document.getElementById("formPort").value = sample.deploy.container_port;
 }
 
 const sampleGit = {
@@ -229,19 +382,9 @@ const sampleLocal = {
   deploy: { container_port: 3000 }
 };
 
-document.getElementById("sampleGit").onclick = () => {
-  document.getElementById("runBody").value = JSON.stringify(sampleGit, null, 2);
-};
-
-document.getElementById("sampleZip").onclick = () => {
-  document.getElementById("runBody").value = JSON.stringify(sampleZip, null, 2);
-};
-
-document.getElementById("sampleLocal").onclick = () => {
-  document.getElementById("runBody").value = JSON.stringify(sampleLocal, null, 2);
-};
-
-runnerBase.textContent = "Same origin";
+document.getElementById("sampleGit").onclick = () => fillForm(sampleGit);
+document.getElementById("sampleZip").onclick = () => fillForm(sampleZip);
+document.getElementById("sampleLocal").onclick = () => fillForm(sampleLocal);
 
 document.getElementById("healthBtn").onclick = async () => {
   await handleRequest("GET", "/healthz");
@@ -249,78 +392,19 @@ document.getElementById("healthBtn").onclick = async () => {
 };
 
 document.getElementById("runBtn").onclick = async () => {
-  const body = document.getElementById("runBody").value;
+  const payload = buildRunPayload();
   await handleRequest("POST", "/run", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body
+    body: JSON.stringify(payload)
   });
+  await refreshWorkspaces();
 };
 
-document.getElementById("epBtn").onclick = async () => {
-  const ws = document.getElementById("epWorkspace").value.trim();
-  const app = document.getElementById("epApp").value.trim();
-  if (!ws || !app) return;
-  await handleRequest("GET", `/endpoint?workspace=${encodeURIComponent(ws)}&app=${encodeURIComponent(app)}`);
-};
-
-document.getElementById("wsList").onclick = async () => {
-  await handleRequest("GET", "/workspaces");
-};
-
-document.getElementById("wsStatus").onclick = async () => {
-  const ws = document.getElementById("wsName").value.trim();
-  if (!ws) return;
-  await handleRequest("GET", `/workspace/status?workspace=${encodeURIComponent(ws)}`);
-};
-
-document.getElementById("wsDelete").onclick = async () => {
-  const ws = document.getElementById("wsName").value.trim();
-  if (!ws) return;
-  await handleRequest("POST", `/workspace/delete?workspace=${encodeURIComponent(ws)}`, { method: "POST" });
-};
-
-document.getElementById("wsRestart").onclick = async () => {
-  const ws = document.getElementById("wsName").value.trim();
-  if (!ws) return;
-  await handleRequest("POST", `/workspace/restart?workspace=${encodeURIComponent(ws)}`, { method: "POST" });
-};
-
-document.getElementById("wsScale").onclick = async () => {
-  const ws = document.getElementById("wsName").value.trim();
-  const app = document.getElementById("wsScaleApp").value.trim();
-  const rep = document.getElementById("wsScaleRep").value.trim();
-  if (!ws || !app || !rep) return;
-  await handleRequest("POST", `/workspace/scale?workspace=${encodeURIComponent(ws)}&app=${encodeURIComponent(app)}&replicas=${encodeURIComponent(rep)}`, { method: "POST" });
-};
-
-document.getElementById("appStatus").onclick = async () => {
-  const ws = document.getElementById("appWs").value.trim();
-  const app = document.getElementById("appName").value.trim();
-  if (!ws || !app) return;
-  await handleRequest("GET", `/app/status?workspace=${encodeURIComponent(ws)}&app=${encodeURIComponent(app)}`);
-};
-
-document.getElementById("appRestart").onclick = async () => {
-  const ws = document.getElementById("appWs").value.trim();
-  const app = document.getElementById("appName").value.trim();
-  if (!ws || !app) return;
-  await handleRequest("POST", `/app/restart?workspace=${encodeURIComponent(ws)}&app=${encodeURIComponent(app)}`, { method: "POST" });
-};
-
-document.getElementById("appDelete").onclick = async () => {
-  const ws = document.getElementById("appWs").value.trim();
-  const app = document.getElementById("appName").value.trim();
-  if (!ws || !app) return;
-  await handleRequest("POST", `/app/delete?workspace=${encodeURIComponent(ws)}&app=${encodeURIComponent(app)}`, { method: "POST" });
-};
+document.getElementById("wsRefresh").onclick = () => refreshWorkspaces();
 
 document.getElementById("clearLog").onclick = () => {
   activityEl.innerHTML = "";
-};
-
-document.getElementById("wsRefresh").onclick = () => {
-  refreshWorkspaces();
 };
 
 healthCheck();
