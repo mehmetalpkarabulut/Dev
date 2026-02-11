@@ -751,6 +751,21 @@ func configureKindNode(clusterName string) error {
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("write hosts.toml: %v", err)
 	}
+
+	// Ensure containerd reads certs.d config (kind image doesn't always set config_path)
+	cmd = exec.Command("docker", "exec", node, "sh", "-c", "grep -q 'config_path = \"/etc/containerd/certs.d\"' /etc/containerd/config.toml || printf '\\n[plugins.\"io.containerd.grpc.v1.cri\".registry]\\n  config_path = \"/etc/containerd/certs.d\"\\n' >> /etc/containerd/config.toml")
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("set containerd config_path: %v", err)
+	}
+
+	cmd = exec.Command("docker", "exec", node, "sh", "-c", "systemctl restart containerd")
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("restart containerd: %v", err)
+	}
 	return nil
 }
 
